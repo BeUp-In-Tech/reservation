@@ -1,0 +1,58 @@
+# ==============================
+# FastAPI Core
+# ==============================
+fastapi==0.111.0
+uvicorn[standard]==0.30.1
+pydantic==2.7.1
+pydantic-settings==2.2.1
+
+# ==============================
+# Database (PostgreSQL Async)
+# ==============================
+sqlalchemy==2.0.30
+asyncpg==0.29.0
+alembic==1.13.1
+psycopg2-binary==2.9.9
+
+# ==============================
+# Authentication / Security
+# ==============================
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.1.3
+
+# ==============================
+# Background Tasks / Async
+# ==============================
+python-multipart==0.0.9
+aiofiles==23.2.1
+
+# ==============================
+# LLM / AI (for booking graph)
+# ==============================
+openai==1.30.1
+langchain==0.2.1
+langgraph==0.0.55
+
+# ==============================
+# Email (for booking confirmation)
+# ==============================
+fastapi-mail==1.4.1
+
+# ==============================
+# Utilities
+# ==============================
+python-dotenv==1.0.1
+httpx==0.27.0
+uuid6==2024.1.12
+
+# ==============================
+# Optional (if using Redis)
+# ==============================
+redis==5.0.4
+
+# ==============================
+# Development
+# ==============================
+pytest==8.2.1
+pytest-asyncio==0.23.6
