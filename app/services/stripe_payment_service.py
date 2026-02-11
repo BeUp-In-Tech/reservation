@@ -1,4 +1,5 @@
-﻿import stripe
+import stripe
+
 from datetime import datetime
 from uuid import UUID
 from decimal import Decimal
