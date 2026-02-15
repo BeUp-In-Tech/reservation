@@ -29,10 +29,16 @@ def normalize_db_url(url: str) -> str:
 
 DATABASE_URL = normalize_db_url(settings.DATABASE_URL)
 
+from sqlalchemy.ext.asyncio import create_async_engine
+
 engine = create_async_engine(
-    DATABASE_URL,
+    settings.DATABASE_URL,
     echo=True,
-    pool_pre_ping=True,
+    connect_args={
+        "server_settings": {
+            "search_path": "core,public"
+        }
+    },
 )
 
 AsyncSessionLocal = async_sessionmaker(
@@ -48,7 +54,7 @@ async def get_db():
         yield session
 from sqlalchemy import text
 
-from sqlalchemy import text
+
 
 async def debug_db_identity():
     async with AsyncSessionLocal() as session:
