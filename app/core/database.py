@@ -20,7 +20,12 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 from sqlalchemy.orm import declarative_base
 from app.core.config import settings
 
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.orm import declarative_base
+from app.core.config import settings
+
 def normalize_db_url(url: str) -> str:
+    # Render sometimes provides postgres:// or postgresql://
     if url.startswith("postgres://"):
         return url.replace("postgres://", "postgresql+asyncpg://", 1)
     if url.startswith("postgresql://") and "postgresql+asyncpg://" not in url:
@@ -29,11 +34,10 @@ def normalize_db_url(url: str) -> str:
 
 DATABASE_URL = normalize_db_url(settings.DATABASE_URL)
 
-from sqlalchemy.ext.asyncio import create_async_engine
-
 engine = create_async_engine(
-    settings.DATABASE_URL,
+    DATABASE_URL,
     echo=True,
+    pool_pre_ping=True,
     connect_args={
         "server_settings": {
             "search_path": "core,public"
@@ -52,9 +56,10 @@ Base = declarative_base()
 async def get_db():
     async with AsyncSessionLocal() as session:
         yield session
+
+
+# keep this if you want:
 from sqlalchemy import text
-
-
 
 async def debug_db_identity():
     async with AsyncSessionLocal() as session:

@@ -3,7 +3,9 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 revision = "9999_create_admin_users"
-down_revision = "4af691f1a46f"  # from your log: enable_draft_business_flow
+down_revision = "zzzz_bootstrap_missing_tables"
+
+ # from your log: enable_draft_business_flow
 branch_labels = None
 depends_on = None
 
