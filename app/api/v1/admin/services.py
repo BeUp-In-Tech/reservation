@@ -1,35 +1,41 @@
 ﻿from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from pydantic import BaseModel
-from datetime import datetime
+from pydantic import BaseModel, Field
+from datetime import datetime, time
 from decimal import Decimal
 import uuid
 
 from app.core.database import get_db
 from app.models import Service, AdminUser
+
 from app.api.v1.admin.auth import get_current_admin
 
 
 router = APIRouter()
 
 
-# ============== Request/Response Models ==============
+
+
+
+
+# ============== Service Models ==============
 
 class ServiceCreate(BaseModel):
-    service_name: str
+    service_name: str = Field(..., min_length=1, max_length=200)
+    
     slug: str
     description: str | None = None
     base_price: float | None = None
     currency: str = "BDT"
     duration_minutes: int = 60
-    # New fields
+    timezone: str = Field(..., min_length=1, max_length=64)
+    open_time: str | None = "09:00"
+    close_time: str | None = "18:00"
+    
     category: str | None = "GENERAL"
-    location: str | None = None
     is_popular: bool = False
-    service_type: str = "IN_PERSON"
     max_capacity: int = 1
-    icon: str | None = None
 
 
 class ServiceUpdate(BaseModel):
@@ -39,13 +45,13 @@ class ServiceUpdate(BaseModel):
     currency: str | None = None
     duration_minutes: int | None = None
     is_active: bool | None = None
-    # New fields
+    timezone: str | None = None
+    open_time: str | None = None
+    close_time: str | None = None
+    
     category: str | None = None
-    location: str | None = None
     is_popular: bool | None = None
-    service_type: str | None = None
     max_capacity: int | None = None
-    icon: str | None = None
 
 
 class ServiceResponse(BaseModel):
@@ -58,17 +64,33 @@ class ServiceResponse(BaseModel):
     currency: str | None
     duration_minutes: int | None
     is_active: bool
-    # New fields
+    timezone: str
+    open_time: str | None
+    close_time: str | None
+    timezone: str
     category: str | None
-    location: str | None
     is_popular: bool
-    service_type: str
     max_capacity: int | None
-    icon: str | None
     created_at: str | None
 
 
-# ============== Helper Function ==============
+# ============== Helpers ==============
+
+def parse_time(time_str: str | None) -> time | None:
+    if not time_str:
+        return None
+    try:
+        parts = time_str.split(":")
+        return time(int(parts[0]), int(parts[1]))
+    except:
+        return None
+
+
+def format_time(t: time | None) -> str | None:
+    if not t:
+        return None
+    return t.strftime("%H:%M")
+
 
 def service_to_response(service: Service) -> ServiceResponse:
     return ServiceResponse(
@@ -81,17 +103,20 @@ def service_to_response(service: Service) -> ServiceResponse:
         currency=service.currency,
         duration_minutes=service.duration_minutes,
         is_active=service.is_active,
+        timezone=service.timezone,
+        open_time=format_time(service.open_time),
+        close_time=format_time(service.close_time),
+        
         category=service.category,
-        location=service.location,
         is_popular=service.is_popular or False,
-        service_type=service.service_type or "IN_PERSON",
         max_capacity=service.max_capacity,
-        icon=service.icon,
         created_at=service.created_at.isoformat() if service.created_at else None
     )
 
 
-# ============== Endpoints ==============
+
+
+# ============== Service Endpoints ==============
 
 @router.get("/businesses/{bid}/services", response_model=list[ServiceResponse])
 async def list_services(
@@ -99,7 +124,7 @@ async def list_services(
     db: AsyncSession = Depends(get_db),
     current_admin: AdminUser = Depends(get_current_admin)
 ):
-    """List all services for a business."""
+    """List all services for a business with operating hours."""
     result = await db.execute(
         select(Service)
         .where(Service.business_id == uuid.UUID(bid))
@@ -116,7 +141,9 @@ async def create_service(
     db: AsyncSession = Depends(get_db),
     current_admin: AdminUser = Depends(get_current_admin)
 ):
-    """Create a new service for a business."""
+    """Create a new service with operating hours."""
+    service_name = request.service_name
+    
     service = Service(
         business_id=uuid.UUID(bid),
         slug=request.slug,
@@ -126,12 +153,12 @@ async def create_service(
         currency=request.currency,
         duration_minutes=request.duration_minutes,
         is_active=True,
+        open_time=parse_time(request.open_time),
+        close_time=parse_time(request.close_time),
         category=request.category,
-        location=request.location,
         is_popular=request.is_popular,
-        service_type=request.service_type,
         max_capacity=request.max_capacity,
-        icon=request.icon,
+        timezone=request.timezone,
         created_at=datetime.utcnow(),
     )
 
@@ -149,7 +176,6 @@ async def get_service(
     db: AsyncSession = Depends(get_db),
     current_admin: AdminUser = Depends(get_current_admin)
 ):
-    """Get service details."""
     result = await db.execute(
         select(Service).where(
             Service.id == uuid.UUID(sid),
@@ -157,10 +183,8 @@ async def get_service(
         )
     )
     service = result.scalar_one_or_none()
-
     if not service:
         raise HTTPException(status_code=404, detail="Service not found")
-
     return service_to_response(service)
 
 
@@ -172,7 +196,6 @@ async def update_service(
     db: AsyncSession = Depends(get_db),
     current_admin: AdminUser = Depends(get_current_admin)
 ):
-    """Update a service."""
     result = await db.execute(
         select(Service).where(
             Service.id == uuid.UUID(sid),
@@ -180,11 +203,9 @@ async def update_service(
         )
     )
     service = result.scalar_one_or_none()
-
     if not service:
         raise HTTPException(status_code=404, detail="Service not found")
 
-    # Update basic fields
     if request.service_name is not None:
         service.service_name = request.service_name
     if request.description is not None:
@@ -197,20 +218,19 @@ async def update_service(
         service.duration_minutes = request.duration_minutes
     if request.is_active is not None:
         service.is_active = request.is_active
+    if request.timezone is not None:
+        service.timezone = request.timezone
+    if request.open_time is not None:
+        service.open_time = parse_time(request.open_time)
+    if request.close_time is not None:
+        service.close_time = parse_time(request.close_time)
     
-    # Update new fields
     if request.category is not None:
         service.category = request.category
-    if request.location is not None:
-        service.location = request.location
     if request.is_popular is not None:
         service.is_popular = request.is_popular
-    if request.service_type is not None:
-        service.service_type = request.service_type
     if request.max_capacity is not None:
         service.max_capacity = request.max_capacity
-    if request.icon is not None:
-        service.icon = request.icon
 
     service.updated_at = datetime.utcnow()
     await db.commit()
@@ -226,7 +246,6 @@ async def delete_service(
     db: AsyncSession = Depends(get_db),
     current_admin: AdminUser = Depends(get_current_admin)
 ):
-    """Delete (deactivate) a service."""
     result = await db.execute(
         select(Service).where(
             Service.id == uuid.UUID(sid),
@@ -234,7 +253,6 @@ async def delete_service(
         )
     )
     service = result.scalar_one_or_none()
-
     if not service:
         raise HTTPException(status_code=404, detail="Service not found")
 
