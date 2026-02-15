@@ -1,7 +1,8 @@
-from logging.config import fileConfig
+﻿from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import engine_from_config, pool, text as sa_text
+import sqlalchemy as sa
 
 from app.core.config import settings
 from sqlalchemy.orm import declarative_base
@@ -57,27 +58,27 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        # ✅ Ensure schema exists before migrations
-        connection.exec_driver_sql("CREATE SCHEMA IF NOT EXISTS core;")
-        connection.exec_driver_sql("SET search_path TO core, public;")
+        # Ensure schema exists before migrations
+        connection.execute(sa_text("CREATE SCHEMA IF NOT EXISTS core;"))
+        connection.execute(sa_text("SET search_path TO core, public;"))
+        connection.commit()
 
-        # ===== DIAGNOSTIC ONLY (optional) =====
+        # ===== DIAGNOSTIC ONLY =====
         print("=== ALEMBIC DB DEBUG ===")
-        row = connection.exec_driver_sql(
-            """
+        row = connection.execute(
+            sa_text("""
             SELECT current_database(), current_user,
                    inet_server_addr()::text, inet_server_port()::text,
                    current_setting('search_path');
-            """
+            """)
         ).first()
         print("ALEMBIC CONNECTED TO:", row)
 
-        reg = connection.exec_driver_sql(
-            "SELECT to_regclass('core.alembic_version')"
+        reg = connection.execute(
+            sa_text("SELECT to_regclass('core.alembic_version')")
         ).scalar()
         print("to_regclass(core.alembic_version) =", reg)
         print("=== END ALEMBIC DB DEBUG ===")
-        # =====================================
 
         context.configure(
             connection=connection,
@@ -89,6 +90,9 @@ def run_migrations_online() -> None:
 
         with context.begin_transaction():
             context.run_migrations()
+        
+        # Explicit commit after migrations
+        connection.commit()
 
 
 if context.is_offline_mode():
