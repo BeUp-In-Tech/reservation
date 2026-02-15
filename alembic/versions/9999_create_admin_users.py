@@ -10,20 +10,19 @@ depends_on = None
 
 def upgrade() -> None:
     op.execute("CREATE SCHEMA IF NOT EXISTS core;")
-
-    op.create_table(
-        "admin_users",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("email", sa.String(255), nullable=False, unique=True),
-        sa.Column("password_hash", sa.String(255), nullable=False),
-        sa.Column("full_name", sa.String(255), nullable=True),
-        sa.Column("role", sa.String(50), nullable=False),
-        sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("true")),
-        sa.Column("last_login_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
-        schema="core",
-    )
+    op.execute("""
+    CREATE TABLE IF NOT EXISTS core.admin_users (
+        id UUID PRIMARY KEY,
+        email VARCHAR(255) NOT NULL UNIQUE,
+        password_hash VARCHAR(255) NOT NULL,
+        full_name VARCHAR(255),
+        role VARCHAR(50) NOT NULL,
+        is_active BOOLEAN NOT NULL DEFAULT true,
+        last_login_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT now(),
+        updated_at TIMESTAMPTZ DEFAULT now()
+    );
+    """)
 
 
 def downgrade() -> None:
