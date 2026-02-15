@@ -4,8 +4,8 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from app.core.config import settings
-from app.core.database import Base
-
+from sqlalchemy.orm import declarative_base
+Base = declarative_base()
 
 # Ensure all model classes are imported so metadata is complete
 import app.models  # noqa: F401
@@ -18,14 +18,15 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 
-def _sync_url(async_url: str) -> str:
-    """
-    Alembic migrations run in sync mode here (psycopg),
-    while the app may use asyncpg. Convert async URL -> sync URL.
-    """
-    if async_url.startswith("postgresql+asyncpg://"):
-        return async_url.replace("postgresql+asyncpg://", "postgresql+psycopg://", 1)
-    return async_url
+def _sync_url(url: str) -> str:
+    """Convert any postgres URL to sync psycopg2 format for Alembic."""
+    if url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql+psycopg2://", 1)
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+psycopg2://", 1)
+    if url.startswith("postgresql+asyncpg://"):
+        return url.replace("postgresql+asyncpg://", "postgresql+psycopg2://", 1)
+    return url
 
 
 def run_migrations_offline() -> None:

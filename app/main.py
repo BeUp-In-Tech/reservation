@@ -49,11 +49,3 @@ async def health_check():
 from sqlalchemy import text
 from app.core.database import AsyncSessionLocal
 
-@app.on_event("startup")
-async def db_debug():
-    async with AsyncSessionLocal() as session:
-        row = (await session.execute(text("""
-            SELECT current_database(), current_user,
-                   inet_server_addr()::text, inet_server_port()::text;
-        """))).first()
-        print("APP CONNECTED TO:", row)
