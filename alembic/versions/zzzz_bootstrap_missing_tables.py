@@ -11,17 +11,9 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # make sure schema exists
     op.execute("CREATE SCHEMA IF NOT EXISTS core;")
-    op.execute("SET search_path TO core, public;")
-
-    # load all models so metadata is complete
-    import app.models  # noqa: F401
-    from app.core.database import Base
-
-    # create any missing tables (won't drop existing)
-    Base.metadata.create_all(bind=op.get_bind(), checkfirst=True)
-
+    # DO NOT create_all here. Keep bootstrap empty.
+    pass
 
 def downgrade() -> None:
     # no-op (we don't want to drop tables automatically)
