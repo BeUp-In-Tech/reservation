@@ -13,20 +13,16 @@ from app.api.v1.payments.router import router as payment_router
 app = FastAPI(
     title="AI Booking System",
     description="LangGraph-powered booking chatbot with voice support, admin dashboard, and Stripe payments",
-    version="1.0.0"
+    version="1.0.0",
 )
-from app.core.database import debug_db_identity
 
-@app.on_event("startup")
-async def startup_event():
-    await debug_db_identity()
-
-# CORS middleware
+# CORS middleware - add your frontend URLs here
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        # Add your production frontend URL here when ready
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -43,9 +39,7 @@ app.include_router(admin_hours_router, prefix="/api/v1/admin", tags=["Admin Oper
 app.include_router(public_router, prefix="/api/v1/public", tags=["Public"])
 app.include_router(payment_router, prefix="/api/v1", tags=["Payments"])
 
+
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
-from sqlalchemy import text
-from app.core.database import AsyncSessionLocal
-

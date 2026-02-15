@@ -1,40 +1,34 @@
 ﻿from logging.config import fileConfig
-
 from alembic import context
-from sqlalchemy import engine_from_config, pool, text as sa_text
-import sqlalchemy as sa
-
+from sqlalchemy import engine_from_config, pool, text
 from app.core.config import settings
-from sqlalchemy.orm import declarative_base
-Base = declarative_base()
-
-# Ensure all model classes are imported so metadata is complete
-import app.models  # noqa: F401
 
 config = context.config
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
+# Import models for metadata
+from app.core.database import Base
+import app.models  # noqa
+
 target_metadata = Base.metadata
 
 
-def _sync_url(url: str) -> str:
-    """Convert any postgres URL to sync psycopg2 format for Alembic."""
+def get_url() -> str:
+    url = settings.DATABASE_URL
     if url.startswith("postgres://"):
-        return url.replace("postgres://", "postgresql+psycopg2://", 1)
-    if url.startswith("postgresql://"):
-        return url.replace("postgresql://", "postgresql+psycopg2://", 1)
-    if url.startswith("postgresql+asyncpg://"):
-        return url.replace("postgresql+asyncpg://", "postgresql+psycopg2://", 1)
+        url = url.replace("postgres://", "postgresql+psycopg2://", 1)
+    elif url.startswith("postgresql://") and "+asyncpg" not in url and "+psycopg2" not in url:
+        url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
+    elif "+asyncpg" in url:
+        url = url.replace("+asyncpg", "+psycopg2")
     return url
 
 
 def run_migrations_offline() -> None:
-    url = _sync_url(settings.DATABASE_URL)
-
     context.configure(
-        url=url,
+        url=get_url(),
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -42,14 +36,13 @@ def run_migrations_offline() -> None:
         version_table="alembic_version",
         version_table_schema="core",
     )
-
     with context.begin_transaction():
         context.run_migrations()
 
 
 def run_migrations_online() -> None:
     configuration = config.get_section(config.config_ini_section) or {}
-    configuration["sqlalchemy.url"] = _sync_url(settings.DATABASE_URL)
+    configuration["sqlalchemy.url"] = get_url()
 
     connectable = engine_from_config(
         configuration,
@@ -58,28 +51,6 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        # Ensure schema exists before migrations
-        connection.execute(sa_text("CREATE SCHEMA IF NOT EXISTS core;"))
-        connection.execute(sa_text("SET search_path TO core, public;"))
-        connection.commit()
-
-        # ===== DIAGNOSTIC ONLY =====
-        print("=== ALEMBIC DB DEBUG ===")
-        row = connection.execute(
-            sa_text("""
-            SELECT current_database(), current_user,
-                   inet_server_addr()::text, inet_server_port()::text,
-                   current_setting('search_path');
-            """)
-        ).first()
-        print("ALEMBIC CONNECTED TO:", row)
-
-        reg = connection.execute(
-            sa_text("SELECT to_regclass('core.alembic_version')")
-        ).scalar()
-        print("to_regclass(core.alembic_version) =", reg)
-        print("=== END ALEMBIC DB DEBUG ===")
-
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
@@ -91,7 +62,6 @@ def run_migrations_online() -> None:
         with context.begin_transaction():
             context.run_migrations()
         
-        # Explicit commit after migrations
         connection.commit()
 
 
