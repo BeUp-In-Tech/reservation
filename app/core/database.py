@@ -46,3 +46,15 @@ Base = declarative_base()
 async def get_db():
     async with AsyncSessionLocal() as session:
         yield session
+from sqlalchemy import text
+
+from sqlalchemy import text
+
+async def debug_db_identity():
+    async with AsyncSessionLocal() as session:
+        row = (await session.execute(text("""
+            SELECT current_database(), current_user,
+                   inet_server_addr()::text, inet_server_port()::text,
+                   current_setting('search_path');
+        """))).first()
+        print("APP DB CONNECTED TO:", row)

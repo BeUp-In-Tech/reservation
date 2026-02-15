@@ -15,6 +15,11 @@ app = FastAPI(
     description="LangGraph-powered booking chatbot with voice support, admin dashboard, and Stripe payments",
     version="1.0.0"
 )
+from app.core.database import debug_db_identity
+
+@app.on_event("startup")
+async def startup_event():
+    await debug_db_identity()
 
 # CORS middleware
 app.add_middleware(
@@ -41,3 +46,14 @@ app.include_router(payment_router, prefix="/api/v1", tags=["Payments"])
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
+from sqlalchemy import text
+from app.core.database import AsyncSessionLocal
+
+@app.on_event("startup")
+async def db_debug():
+    async with AsyncSessionLocal() as session:
+        row = (await session.execute(text("""
+            SELECT current_database(), current_user,
+                   inet_server_addr()::text, inet_server_port()::text;
+        """))).first()
+        print("APP CONNECTED TO:", row)
