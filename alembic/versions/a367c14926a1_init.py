@@ -18,12 +18,14 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
-    # ✅ Ensure schema exists
     op.execute("CREATE SCHEMA IF NOT EXISTS core;")
 
-    # ✅ Create all tables from SQLAlchemy models (in core schema)
+    # ✅ force-load all models so Base.metadata is complete
+    import app.models  # noqa: F401
+
     from app.core.database import Base
     Base.metadata.create_all(bind=op.get_bind())
+
 
 def downgrade() -> None:
     from app.core.database import Base
