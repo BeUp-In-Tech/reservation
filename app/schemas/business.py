@@ -9,7 +9,7 @@ from uuid import UUID
 class BusinessBase(BaseModel):
     """Fields common to create and update operations."""
     business_name: str = Field(..., min_length=1, max_length=200)
-    industry: str = Field(..., min_length=1, max_length=50)
+    
     timezone: str = Field(..., min_length=1, max_length=64)
 
 
@@ -21,7 +21,7 @@ class BusinessCreate(BusinessBase):
 class BusinessUpdate(BaseModel):
     """Fields that can be updated. All optional."""
     business_name: str | None = Field(None, min_length=1, max_length=200)
-    industry: str | None = None
+    
     timezone: str | None = None
     status: str | None = None
 

@@ -1,5 +1,7 @@
 ﻿from app.core.database import Base
 from app.models.other_models import HandoffRequest
+from .business_address import BusinessAddress
+from .business_profile import BusinessProfile
 
 from app.models.business import Business
 from app.models.service import Service
@@ -7,6 +9,9 @@ from app.models.booking import Booking
 from app.models.conversation import Conversation
 from app.models.conversation_message import ConversationMessage
 from app.models.call_session import CallSession
+
+
+from .service_contact import ServiceContact
 
 from app.models.other_models import (
     AdminUser,
@@ -40,4 +45,7 @@ __all__ = [
     "BookingStatusHistory",
     "BusinessNotificationSettings",
     "ServiceImage",
+    "BusinessAddress",
+    "BusinessProfile",
+
 ]

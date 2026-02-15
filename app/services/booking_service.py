@@ -4,7 +4,8 @@ from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.models import Booking, Service
+from app.models import Booking, Service, Business
+
 from app.services.booking_status_history_service import set_booking_status
 
 
@@ -32,7 +33,21 @@ class BookingService:
         Create a new booking in INITIATED status.
         Called when user selects a service.
         """
-        
+        # 🔒 Ensure business exists and is ACTIVE
+        result = await self.db.execute(
+        select(Business).where(Business.id == uuid.UUID(business_id))
+)
+        business = result.scalar_one_or_none()
+
+        if not business:
+            raise ValueError("Business not found")
+
+        if business.status != "ACTIVE":
+            raise ValueError("Business is not active")
+
+        if not business.timezone:
+            raise ValueError("Business timezone not configured")
+
         tracking_id = self._generate_tracking_id()
         
         # Ensure tracking ID is unique

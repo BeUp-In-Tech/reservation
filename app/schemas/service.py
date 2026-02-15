@@ -30,7 +30,8 @@ class ServiceCapacityResponse(BaseModel):
 
 class ServiceBase(BaseModel):
     service_name: str = Field(..., min_length=1, max_length=200)
-    description: str | None = None
+    description: str = Field(..., min_length=1)
+    timezone: str = Field(..., min_length=1, max_length=64)
     base_price: Decimal | None = Field(None, ge=0)
     currency: str | None = Field(None, min_length=3, max_length=3)
     duration_minutes: int | None = Field(None, gt=0)
@@ -43,7 +44,8 @@ class ServiceCreate(ServiceBase):
 
 class ServiceUpdate(BaseModel):
     service_name: str | None = Field(None, min_length=1, max_length=200)
-    description: str | None = None
+    description: str | None = Field(None, min_length=1)
+    timezone: str | None = Field(None, min_length=1, max_length=64)
     base_price: Decimal | None = None
     currency: str | None = None
     duration_minutes: int | None = None
@@ -75,6 +77,7 @@ class ServiceListItem(BaseModel):
     id: UUID
     slug: str
     service_name: str
+    timezone: str
     base_price: Decimal | None = None
     currency: str | None = None
     duration_minutes: int | None = None

@@ -3,30 +3,36 @@ import uuid
 from datetime import datetime
 from sqlalchemy import String, Text, Boolean, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID, ENUM
+from sqlalchemy.dialects.postgresql import UUID
+
 
 from app.core.database import Base
 
-IndustryEnum = ENUM(
-    "HOTEL", "RESTAURANT", "SALON", "CLINIC", "OTHER", "SPA",
-    name="industry_enum",
-    schema="core",
-    create_type=False,
-)
+
 
 class Business(Base):
     __tablename__ = "businesses"
     __table_args__ = {"schema": "core"}
 
+
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     slug: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
-    business_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    business_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    service_type_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
 
-    timezone: Mapped[str] = mapped_column(String(64), nullable=False)
-    status: Mapped[str] = mapped_column(String(30), default="ACTIVE")
-    industry: Mapped[str] = mapped_column(IndustryEnum, nullable=False, default="OTHER")
-    industry_label: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
+    timezone: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    status: Mapped[str] = mapped_column(String(30), default="DRAFT")
+
+    
+    
+
+
+    contact_person: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    street_address: Mapped[str | None] = mapped_column(Text, nullable=True)
+    state: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    zip_code: Mapped[str | None] = mapped_column(String(30), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     phone: Mapped[str | None] = mapped_column(String(40), nullable=True)
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -35,7 +41,8 @@ class Business(Base):
     city: Mapped[str | None] = mapped_column(String(100), nullable=True)
     country: Mapped[str | None] = mapped_column(String(100), nullable=True)
     default_currency: Mapped[str] = mapped_column(String(3), default="BDT")
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False)
+
 
     created_by_admin_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("core.admin_users.id"), nullable=True
@@ -44,7 +51,8 @@ class Business(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    services = relationship("Service", back_populates="business")
+    services = relationship("Service", back_populates="business", cascade="all, delete-orphan")
+
     call_sessions = relationship("CallSession", back_populates="business")
     bookings = relationship("Booking", back_populates="business")
     conversations = relationship("Conversation", back_populates="business")
@@ -53,3 +61,8 @@ class Business(Base):
     notification_settings = relationship("BusinessNotificationSettings", back_populates="business", uselist=False)
     availability_exceptions = relationship("BusinessAvailabilityException", back_populates="business")
     handoff_requests = relationship("HandoffRequest", back_populates="business")
+    service_contacts = relationship("ServiceContact", back_populates="business",cascade="all, delete-orphan")
+  
+
+
+    
