@@ -17,12 +17,17 @@ down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
-
 def upgrade() -> None:
-    """Upgrade schema."""
-    pass
+    # ✅ Ensure schema exists
+    op.execute("CREATE SCHEMA IF NOT EXISTS core;")
 
+    # ✅ Create all tables from SQLAlchemy models (in core schema)
+    from app.core.database import Base
+    Base.metadata.create_all(bind=op.get_bind())
 
 def downgrade() -> None:
-    """Downgrade schema."""
-    pass
+    from app.core.database import Base
+    Base.metadata.drop_all(bind=op.get_bind())
+
+    # optional:
+    # op.execute("DROP SCHEMA IF EXISTS core CASCADE;")

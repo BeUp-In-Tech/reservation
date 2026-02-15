@@ -8,27 +8,65 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # 1️⃣ Drop FK
-    op.drop_constraint(
-        "businesses_business_type_id_fkey",
-        "businesses",
-        schema="core",
-        type_="foreignkey",
-    )
+    conn = op.get_bind()
 
-    # 2️⃣ Drop index
-    op.drop_index(
-        "idx_businesses_business_type_id",
-        table_name="businesses",
-        schema="core",
-    )
+    # If businesses table doesn't exist, skip safely
+    if not conn.execute(sa.text("SELECT to_regclass('core.businesses')")).scalar():
+        return
 
-    # 3️⃣ Drop column
-    op.drop_column("businesses", "business_type_id", schema="core")
+    # Drop FK if exists
+    fk_exists = conn.execute(sa.text("""
+        SELECT 1
+        FROM pg_constraint c
+        JOIN pg_class t ON t.oid = c.conrelid
+        JOIN pg_namespace n ON n.oid = t.relnamespace
+        WHERE n.nspname='core'
+          AND t.relname='businesses'
+          AND c.conname='businesses_business_type_id_fkey'
+        LIMIT 1
+    """)).scalar()
 
-    # 4️⃣ Drop table
-    op.drop_table("business_types", schema="core")
+    if fk_exists:
+        op.drop_constraint(
+            "businesses_business_type_id_fkey",
+            "businesses",
+            schema="core",
+            type_="foreignkey",
+        )
 
+    # Drop index if exists
+    idx_exists = conn.execute(sa.text("""
+        SELECT 1
+        FROM pg_indexes
+        WHERE schemaname='core'
+          AND tablename='businesses'
+          AND indexname='idx_businesses_business_type_id'
+        LIMIT 1
+    """)).scalar()
+
+    if idx_exists:
+        op.drop_index(
+            "idx_businesses_business_type_id",
+            table_name="businesses",
+            schema="core",
+        )
+
+    # Drop column if exists
+    col_exists = conn.execute(sa.text("""
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema='core'
+          AND table_name='businesses'
+          AND column_name='business_type_id'
+        LIMIT 1
+    """)).scalar()
+
+    if col_exists:
+        op.drop_column("businesses", "business_type_id", schema="core")
+
+    # Drop table if exists
+    if conn.execute(sa.text("SELECT to_regclass('core.business_types')")).scalar():
+        op.drop_table("business_types", schema="core")
 
 def downgrade() -> None:
     op.create_table(
