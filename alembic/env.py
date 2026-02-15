@@ -55,6 +55,12 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+        from sqlalchemy import text
+
+# ✅ Ensure schema exists before migrations
+        connection.execute(text("CREATE SCHEMA IF NOT EXISTS core"))
+        connection.execute(text("SET search_path TO core, public"))
+
         # ===== DIAGNOSTIC ONLY (no behavior change) =====
         print("=== ALEMBIC DB DEBUG ===")
         row = connection.exec_driver_sql(
