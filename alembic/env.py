@@ -6,6 +6,7 @@ from sqlalchemy import engine_from_config, pool
 from app.core.config import settings
 from app.core.database import Base
 
+
 # Ensure all model classes are imported so metadata is complete
 import app.models  # noqa: F401
 
@@ -55,13 +56,11 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        from sqlalchemy import text
+        # ✅ Ensure schema exists before migrations
+        connection.exec_driver_sql("CREATE SCHEMA IF NOT EXISTS core;")
+        connection.exec_driver_sql("SET search_path TO core, public;")
 
-# ✅ Ensure schema exists before migrations
-        connection.execute(text("CREATE SCHEMA IF NOT EXISTS core"))
-        connection.execute(text("SET search_path TO core, public"))
-
-        # ===== DIAGNOSTIC ONLY (no behavior change) =====
+        # ===== DIAGNOSTIC ONLY (optional) =====
         print("=== ALEMBIC DB DEBUG ===")
         row = connection.exec_driver_sql(
             """
@@ -76,17 +75,8 @@ def run_migrations_online() -> None:
             "SELECT to_regclass('core.alembic_version')"
         ).scalar()
         print("to_regclass(core.alembic_version) =", reg)
-
-        tables = connection.exec_driver_sql(
-            """
-            SELECT table_schema, table_name
-            FROM information_schema.tables
-            WHERE table_name='alembic_version';
-            """
-        ).all()
-        print("alembic_version tables:", tables)
         print("=== END ALEMBIC DB DEBUG ===")
-        # ==============================================
+        # =====================================
 
         context.configure(
             connection=connection,
