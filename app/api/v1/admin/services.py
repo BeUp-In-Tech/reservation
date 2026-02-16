@@ -67,7 +67,6 @@ class ServiceResponse(BaseModel):
     timezone: str
     open_time: str | None
     close_time: str | None
-    timezone: str
     category: str | None
     is_popular: bool
     max_capacity: int | None
