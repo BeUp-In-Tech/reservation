@@ -74,13 +74,6 @@ class BusinessResponse(BaseModel):
     city: str | None = None
     state: str | None = None
     zip_code: str | None = None
-    country: str | None = None
-    timezone: str
-    default_currency: str | None = None
-    status: str
-    is_active: bool
-    created_at: str | None
-    service_count: int = 0
 
 
 class DeleteResponse(BaseModel):
@@ -124,14 +117,6 @@ async def _get_business_or_404(db: AsyncSession, business_id: str) -> Business:
     return business
 
 
-async def _get_service_count(db: AsyncSession, business_id: uuid.UUID) -> int:
-    from app.models import Service
-    result = await db.execute(
-        select(Service).where(Service.business_id == business_id, Service.is_active == True)
-    )
-    return len(result.scalars().all())
-
-
 def _parse_time(time_str: str) -> time:
     h, m = map(int, time_str.split(":"))
     return time(h, m)
@@ -155,7 +140,6 @@ async def list_businesses(
 
     responses = []
     for b in businesses:
-        service_count = await _get_service_count(db, b.id)
         responses.append(BusinessResponse(
             id=str(b.id),
             business_name=b.business_name,
@@ -169,13 +153,6 @@ async def list_businesses(
             city=b.city,
             state=b.state,
             zip_code=b.zip_code,
-            country=b.country,
-            timezone=b.timezone,
-            default_currency=b.default_currency,
-            status=b.status,
-            is_active=b.is_active,
-            created_at=b.created_at.isoformat() if b.created_at else None,
-            service_count=service_count,
         ))
     return responses
 
@@ -187,7 +164,7 @@ async def create_business(
     current_admin: AdminUser = Depends(get_current_admin),
 ):
     """Create a new business with all info at once."""
-    
+
     # Check slug
     result = await db.execute(select(Business).where(Business.slug == request.slug))
     if result.scalar_one_or_none():
@@ -263,13 +240,6 @@ async def create_business(
         city=business.city,
         state=business.state,
         zip_code=business.zip_code,
-        country=business.country,
-        timezone=business.timezone,
-        default_currency=business.default_currency,
-        status=business.status,
-        is_active=business.is_active,
-        created_at=business.created_at.isoformat() if business.created_at else None,
-        service_count=0,
     )
 
 
@@ -281,7 +251,6 @@ async def get_business(
 ):
     """Get a business by ID."""
     business = await _get_business_or_404(db, business_id)
-    service_count = await _get_service_count(db, business.id)
 
     return BusinessResponse(
         id=str(business.id),
@@ -296,13 +265,6 @@ async def get_business(
         city=business.city,
         state=business.state,
         zip_code=business.zip_code,
-        country=business.country,
-        timezone=business.timezone,
-        default_currency=business.default_currency,
-        status=business.status,
-        is_active=business.is_active,
-        created_at=business.created_at.isoformat() if business.created_at else None,
-        service_count=service_count,
     )
 
 
@@ -345,8 +307,6 @@ async def update_business(
     await db.commit()
     await db.refresh(business)
 
-    service_count = await _get_service_count(db, business.id)
-
     return BusinessResponse(
         id=str(business.id),
         business_name=business.business_name,
@@ -360,13 +320,6 @@ async def update_business(
         city=business.city,
         state=business.state,
         zip_code=business.zip_code,
-        country=business.country,
-        timezone=business.timezone,
-        default_currency=business.default_currency,
-        status=business.status,
-        is_active=business.is_active,
-        created_at=business.created_at.isoformat() if business.created_at else None,
-        service_count=service_count,
     )
 
 
@@ -447,8 +400,11 @@ async def delete_business(
         # 13. Delete availability exceptions
         await db.execute(delete(BusinessAvailabilityException).where(BusinessAvailabilityException.business_id == bid))
 
-        # 14. Delete admin access
-        await db.execute(text("DELETE FROM core.admin_business_access WHERE business_id = :bid"), {"bid": str(bid)})
+        # 14. Delete admin access (table may not exist)
+        try:
+            await db.execute(text("DELETE FROM core.admin_business_access WHERE business_id = :bid"), {"bid": str(bid)})
+        except Exception:
+            pass
 
         # 15. Delete profiles
         await db.execute(text("DELETE FROM core.business_profiles WHERE business_id = :bid"), {"bid": str(bid)})
