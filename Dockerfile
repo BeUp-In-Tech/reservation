@@ -23,7 +23,9 @@ COPY . .
 EXPOSE 8000
 
 # Start server
-COPY entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
 
-CMD ["/app/entrypoint.sh"]
+# Expose API port
+EXPOSE 8000
+
+# Start server (Render will detect the open port)
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
