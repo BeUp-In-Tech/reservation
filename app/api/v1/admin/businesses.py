@@ -369,7 +369,10 @@ async def delete_business(
         conversations_result = await db.execute(select(Conversation.id).where(Conversation.business_id == bid))
         conversation_ids = [row[0] for row in conversations_result.fetchall()]
         if conversation_ids:
-            await db.execute(text("DELETE FROM core.conversation_messages WHERE conversation_id = ANY(:ids)"), {"ids": conversation_ids})
+            await db.execute(
+        text("DELETE FROM core.conversation_messages WHERE conversation_id = ANY(:ids)"),
+        {"ids": conversation_ids},
+    )
 
         # 9. Delete conversations
         await db.execute(delete(Conversation).where(Conversation.business_id == bid))
@@ -386,11 +389,12 @@ async def delete_business(
         # 13. Delete availability exceptions
         await db.execute(delete(BusinessAvailabilityException).where(BusinessAvailabilityException.business_id == bid))
 
-        # 14. Delete admin access (table may not exist)
-        try:
-            await db.execute(text("DELETE FROM core.admin_business_access WHERE business_id = :bid"), {"bid": str(bid)})
-        except Exception:
-            pass
+        reg = await db.execute(text("SELECT to_regclass('core.admin_business_access')"))
+        if reg.scalar() is not None:
+            await db.execute(
+        text("DELETE FROM core.admin_business_access WHERE business_id = :bid"),
+        {"bid": str(bid)},
+    )
 
         # 15. Delete profiles
         await db.execute(text("DELETE FROM core.business_profiles WHERE business_id = :bid"), {"bid": str(bid)})
