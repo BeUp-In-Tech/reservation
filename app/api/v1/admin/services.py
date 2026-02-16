@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel, Field
 from datetime import datetime, time
-from decimal import Decimal
+
 import uuid
 
 from app.core.database import get_db
@@ -23,35 +23,20 @@ router = APIRouter()
 
 class ServiceCreate(BaseModel):
     service_name: str = Field(..., min_length=1, max_length=200)
-    
     slug: str
     description: str | None = None
-    base_price: float | None = None
-    currency: str = "BDT"
-    duration_minutes: int = 60
     timezone: str = Field(..., min_length=1, max_length=64)
     open_time: str | None = "09:00"
     close_time: str | None = "18:00"
-    
-    category: str | None = "GENERAL"
-    is_popular: bool = False
-    max_capacity: int = 1
-
 
 class ServiceUpdate(BaseModel):
+
     service_name: str | None = None
     description: str | None = None
-    base_price: float | None = None
-    currency: str | None = None
-    duration_minutes: int | None = None
     is_active: bool | None = None
     timezone: str | None = None
     open_time: str | None = None
     close_time: str | None = None
-    
-    category: str | None = None
-    is_popular: bool | None = None
-    max_capacity: int | None = None
 
 
 class ServiceResponse(BaseModel):
@@ -60,17 +45,10 @@ class ServiceResponse(BaseModel):
     slug: str
     service_name: str
     description: str | None
-    base_price: float | None
-    currency: str | None
-    duration_minutes: int | None
     is_active: bool
     timezone: str
     open_time: str | None
     close_time: str | None
-    category: str | None
-    is_popular: bool
-    max_capacity: int | None
-    created_at: str | None
 
 
 # ============== Helpers ==============
@@ -98,20 +76,11 @@ def service_to_response(service: Service) -> ServiceResponse:
         slug=service.slug,
         service_name=service.service_name,
         description=service.description,
-        base_price=float(service.base_price) if service.base_price else None,
-        currency=service.currency,
-        duration_minutes=service.duration_minutes,
         is_active=service.is_active,
         timezone=service.timezone,
         open_time=format_time(service.open_time),
         close_time=format_time(service.close_time),
-        
-        category=service.category,
-        is_popular=service.is_popular or False,
-        max_capacity=service.max_capacity,
-        created_at=service.created_at.isoformat() if service.created_at else None
     )
-
 
 
 
@@ -147,16 +116,16 @@ async def create_service(
         business_id=uuid.UUID(bid),
         slug=request.slug,
         service_name=request.service_name,
-        description=request.description,
-        base_price=Decimal(str(request.base_price)) if request.base_price else None,
-        currency=request.currency,
-        duration_minutes=request.duration_minutes,
+        description=request.description or "",
+        base_price=None,
+        currency="BDT",
+        duration_minutes=60,
         is_active=True,
         open_time=parse_time(request.open_time),
         close_time=parse_time(request.close_time),
-        category=request.category,
-        is_popular=request.is_popular,
-        max_capacity=request.max_capacity,
+        category="GENERAL",
+        is_popular=False,
+        max_capacity=1,
         timezone=request.timezone,
         created_at=datetime.utcnow(),
     )
@@ -209,12 +178,12 @@ async def update_service(
         service.service_name = request.service_name
     if request.description is not None:
         service.description = request.description
-    if request.base_price is not None:
-        service.base_price = Decimal(str(request.base_price))
-    if request.currency is not None:
-        service.currency = request.currency
-    if request.duration_minutes is not None:
-        service.duration_minutes = request.duration_minutes
+    if request.category is not None:
+        service.category = request.category
+    if request.is_popular is not None:
+        service.is_popular = request.is_popular
+    if request.max_capacity is not None:
+        service.max_capacity = request.max_capacity
     if request.is_active is not None:
         service.is_active = request.is_active
     if request.timezone is not None:

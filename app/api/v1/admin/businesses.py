@@ -16,23 +16,13 @@ router = APIRouter()
 
 
 # ============== Models ==============
+# (delete these lines entirely)
 
-class DayHours(BaseModel):
-    day_of_week: int = Field(..., ge=0, le=6)
-    is_closed: bool = False
-    open_time: str | None = None
-    close_time: str | None = None
-
-
-class WeeklyHours(BaseModel):
-    days: List[DayHours] = Field(..., min_length=7, max_length=7)
 
 
 class BusinessCreate(BaseModel):
     business_name: str = Field(..., min_length=1, max_length=200)
     slug: str = Field(..., min_length=1, max_length=120)
-    timezone: str = Field(..., min_length=1, max_length=64)
-    weekly_hours: WeeklyHours
     description: str = Field(..., min_length=1)
     service_type_name: str = Field(..., min_length=1, max_length=120)
     contact_fullname: str = Field(..., min_length=1, max_length=120)
@@ -42,8 +32,6 @@ class BusinessCreate(BaseModel):
     city: str = Field(..., min_length=1, max_length=100)
     state: str = Field(..., min_length=1, max_length=100)
     zip_code: str = Field(..., min_length=1, max_length=30)
-    country: str = Field(..., min_length=1, max_length=100)
-    default_currency: str = "BDT"
 
 
 class BusinessUpdate(BaseModel):
@@ -171,9 +159,7 @@ async def create_business(
         raise HTTPException(status_code=400, detail="Slug already exists")
 
     # Validate hours
-    for d in request.weekly_hours.days:
-        if not d.is_closed and (not d.open_time or not d.close_time):
-            raise HTTPException(status_code=400, detail=f"Day {d.day_of_week}: times required when not closed")
+    # (delete these lines entirely)
 
     # Create business
     business = Business(
@@ -188,9 +174,9 @@ async def create_business(
         city=request.city,
         state=request.state,
         zip_code=request.zip_code,
-        country=request.country,
-        timezone=request.timezone,
-        default_currency=request.default_currency,
+        country="BD",
+        timezone="Asia/Dhaka",
+        default_currency="BDT",
         status="ACTIVE",
         is_active=True,
         created_by_admin_id=current_admin.id,
@@ -201,15 +187,15 @@ async def create_business(
     await db.flush()
 
     # Create operating hours
-    for d in request.weekly_hours.days:
-        ot = _parse_time(d.open_time) if not d.is_closed else None
-        ct = _parse_time(d.close_time) if not d.is_closed else None
+    # Create default operating hours (Mon-Fri 9-18, Sat-Sun closed)
+    for day in range(7):
+        is_closed = day in [5, 6]  # Saturday, Sunday
         db.add(BusinessOperatingHours(
             business_id=business.id,
-            day_of_week=d.day_of_week,
-            open_time=ot,
-            close_time=ct,
-            is_closed=d.is_closed,
+            day_of_week=day,
+            open_time=None if is_closed else time(9, 0),
+            close_time=None if is_closed else time(18, 0),
+            is_closed=is_closed,
         ))
 
     # Create AI settings
