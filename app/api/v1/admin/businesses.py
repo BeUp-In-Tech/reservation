@@ -45,8 +45,7 @@ class BusinessUpdate(BaseModel):
     city: str | None = None
     state: str | None = None
     zip_code: str | None = None
-    country: str | None = None
-    timezone: str | None = None
+
 
 
 class BusinessResponse(BaseModel):
@@ -284,10 +283,7 @@ async def update_business(
         business.state = request.state
     if request.zip_code is not None:
         business.zip_code = request.zip_code
-    if request.country is not None:
-        business.country = request.country
-    if request.timezone is not None:
-        business.timezone = request.timezone
+
 
     business.updated_at = datetime.utcnow()
     await db.commit()
