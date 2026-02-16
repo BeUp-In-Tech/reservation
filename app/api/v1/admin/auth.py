@@ -22,7 +22,7 @@ JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = settings.JWT_EXPIRATION_HOURS
 
 # Hardcoded Admin from config
-ADMIN_EMAIL = settings.ADMIN_EMAIL
+ADMIN_EMAIL = "mondal15-5329@diu.edu.bd"
 ADMIN_NAME = settings.ADMIN_NAME
 ADMIN_DEFAULT_PASSWORD = settings.ADMIN_DEFAULT_PASSWORD
 
@@ -298,9 +298,10 @@ async def forgot_password(
     # For now, return the token (REMOVE IN PRODUCTION)
     print(f"Password reset token for {admin.email}: {reset_jwt}")
     
-    return MessageResponse(
-        message=f"Password reset token generated. Token: {reset_jwt}"
-    )
+    print(f"Password reset token for {admin.email}: {reset_jwt}")
+    return MessageResponse(message=f"Password reset token generated. Token: {reset_jwt}")
+
+    
 
 
 @router.post("/reset-password", response_model=MessageResponse)
@@ -349,17 +350,3 @@ async def reset_password(
     return MessageResponse(message="Password reset successfully. You can now login with your new password.")
 
 
-@router.post("/init", response_model=MessageResponse)
-async def init_admin(
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Initialize the hardcoded admin account.
-    Call this once to create the admin in the database.
-    Safe to call multiple times - won't duplicate.
-    """
-    admin = await ensure_admin_exists(db)
-    
-    return MessageResponse(
-        message=f"Admin initialized: {admin.email}"
-    )

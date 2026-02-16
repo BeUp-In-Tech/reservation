@@ -3,6 +3,12 @@
   "password": "admin123"
 }
 
+{
+  "email": "mondal15-5329@diu.edu.bd",
+  "password": "123456"
+}
+
+psql "postgresql://reservation_dev_xm4a_user:PwwvUjjS83I40Q5f14CjBzQu6HFNipsZ@dpg-d68r8oi48b3s73aqfep0-a.oregon-postgres.render.com/reservation_dev_xm4a"
 # 1. Create database
 psql -U postgres -c "CREATE DATABASE reservation_dev;"
 
