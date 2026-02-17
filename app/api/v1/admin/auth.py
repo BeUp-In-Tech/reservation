@@ -22,7 +22,7 @@ JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = settings.JWT_EXPIRATION_HOURS
 
 # Hardcoded Admin from config
-ADMIN_EMAIL = "mondal15-5329@diu.edu.bd"
+ADMIN_EMAIL = "beupintech@gmail.com"
 ADMIN_NAME = settings.ADMIN_NAME
 ADMIN_DEFAULT_PASSWORD = settings.ADMIN_DEFAULT_PASSWORD
 
