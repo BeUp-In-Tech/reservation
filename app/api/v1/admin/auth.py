@@ -295,6 +295,37 @@ async def forgot_password(
     
     return MessageResponse(message=success_message)
 
+# ✅ ADD THIS (for email link clicks)
+@router.get("/reset-password")
+async def reset_password_page(
+    token: str,
+    db: AsyncSession = Depends(get_db)
+):
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        if payload.get("type") != "password_reset":
+            raise HTTPException(status_code=400, detail="Invalid reset token")
+        return {
+            "message": "Token valid. Use POST to reset password.",
+            "token": token,
+            "email": payload.get("email"),
+            "next_step": {
+                "method": "POST",
+                "url": "/api/v1/admin/auth/reset-password",
+                "body": {
+                    "token": token,
+                    "new_password": "your_new_password",
+                    "confirm_password": "your_new_password"
+                }
+            }
+        }
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=400, detail="Token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=400, detail="Invalid token")
+
+
+
 @router.post("/reset-password", response_model=MessageResponse)
 async def reset_password(
     request: ResetPasswordRequest,
