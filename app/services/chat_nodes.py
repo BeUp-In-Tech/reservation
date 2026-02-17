@@ -1,7 +1,6 @@
 ﻿from app.services.chat_state import BookingState
 from app.services.llm import extract_json_from_llm, call_llm_with_history
 
-
 # ============== NODE 1: Parse user message ==============
 
 async def parse_message_node(state: BookingState) -> BookingState:
@@ -36,7 +35,8 @@ When user says:
     services_list = state.get("available_services", [])
     services_names = [s["service_name"] for s in services_list] if services_list else []
 
-    system_prompt = f"""You are an intent and entity extractor for a booking chatbot.
+    system_prompt = f"""
+You are an intent and entity extractor for a booking chatbot.
 
 {date_context}
 
@@ -44,11 +44,16 @@ Available services at this business: {services_names}
 
 Analyze the user's message and extract:
 1. intent: What does the user want to do?
+   (Example intents: "greet", "list_services", "select_service", "ask_service_details", "select_slot", "provide_contact", "confirm_booking", "complete_booking", "check_status", "cancel_booking", "confirm_cancel", "reschedule", "escalate", "cancel", "other")
+   
 2. entities: What specific information did they provide?
+   (Example entities: "service_name", "date_mentioned", "time_mentioned", "contact_info")
 
 Respond with JSON only:
 {{
-    "intent": "greet" | "list_services" | "select_service" | "ask_service_details" | "select_slot" | "provide_contact" | "confirm_booking" | "complete_booking" | "check_status" | "cancel_booking" | "confirm_cancel" | "reschedule" | "escalate" | "cancel" | "other",
+    "intent": "greet" | "list_services" | "select_service" | "ask_service_details" | "select_slot" | "provide_contact" | "confirm_booking" | "complete_booking" | "check_status" | "cancel_booking" | "confirm_cancel" | "reschedule" | "escalate" | "cancel" | "book_business" | "other",
+    "business_name": "business name if mentioned, or null",
+    "business_slug": "business slug if mentioned, or null",
     "service_mentioned": "service name if mentioned, or null",
     "date_mentioned": "date if mentioned (YYYY-MM-DD format based on current date above), or null",
     "time_mentioned": "time if mentioned (HH:MM 24hr format), or null",
@@ -62,27 +67,21 @@ Respond with JSON only:
 }}
 
 Intent definitions:
-- greet: Hello, hi, good morning, etc.
-- list_services: User wants to see what services are available
-- select_service: User is choosing/mentioning a specific service to book
-- ask_service_details: User wants more info about a service (price, duration, etc.)
-- select_slot: User is choosing a date/time for booking
-- provide_contact: User is giving their name, phone, or email
-- confirm_booking: User says "yes", "confirm", "book it", "proceed", "go ahead", "that's correct" to finalize a booking
-- complete_booking: User provides ALL booking info at once (service + date/time + contact info in one message)
-- check_status: User asks "what's my booking status" or "check booking BK-XXXXXX" (MUST mention status/tracking ID)
-- cancel_booking: User EXPLICITLY says "cancel my booking", "I want to cancel"
-- confirm_cancel: User confirms cancellation AFTER being asked "are you sure you want to cancel?"
-- reschedule: User wants to CHANGE their existing booking time
-- escalate: User wants to talk to a human/agent/real person
-- other: Doesn't fit above categories
-
-CRITICAL RULES:
-1. "yes", "confirm", "proceed", "book it", "go ahead" = "confirm_booking" (NOT check_status)
-2. "check_status" ONLY if user mentions "status", "tracking ID", or "BK-XXXXXX"
-3. If user is in a booking flow and says "yes" = "confirm_booking"
-4. When in doubt, prefer "confirm_booking" over "check_status"
-
+- greet: "hello", "hi", "good morning", etc.
+- list_services: User wants to see what services are available.
+- select_service: User is choosing/mentioning a specific service to book.
+- ask_service_details: User wants more info about a service (price, duration, etc.).
+- select_slot: User is choosing a date/time for booking.
+- provide_contact: User is giving their name, phone, or email.
+- confirm_booking: User says "yes", "confirm", "book it", "proceed", "go ahead", "that's correct" to finalize a booking.
+- complete_booking: User provides ALL booking info at once (service + date/time + contact info in one message).
+- check_status: User asks "what's my booking status" or "check booking BK-XXXXXX" (MUST mention status/tracking ID).
+- cancel_booking: User EXPLICITLY says "cancel my booking", "I want to cancel".
+- confirm_cancel: User confirms cancellation AFTER being asked "are you sure you want to cancel?".
+- reschedule: User wants to CHANGE their existing booking time.
+- escalate: User wants to talk to a human/agent/real person.
+- other: Doesn't fit above categories.
+- book_business: User mentions they want to book a business by name or slug.
 """
 
     current_msg = state.get("current_message", "")
@@ -91,7 +90,12 @@ CRITICAL RULES:
 
     # Update state with extracted information
     state["parsed_intent"] = extracted.get("intent", "other")
-
+    
+    # Check if the user is trying to book a business
+    if extracted.get("intent") == "book_business":
+        # If intent is "book_business", capture the business mentioned
+        state["business_name"] = extracted.get("business_name")
+    
     if extracted.get("service_mentioned"):
         # Find service ID from name
         service_found = False
@@ -109,15 +113,14 @@ CRITICAL RULES:
             state["available_service_names"] = available_names
 
     if extracted.get("date_mentioned") and extracted.get("time_mentioned"):
-      state["selected_slot_start"] = f"{extracted['date_mentioned']}T{extracted['time_mentioned']}:00"
-      state["selected_slot_end"] = None  # will be calculated in service
+        state["selected_slot_start"] = f"{extracted['date_mentioned']}T{extracted['time_mentioned']}:00"
+        state["selected_slot_end"] = None  # will be calculated in service
     elif extracted.get("date_mentioned"):
-    # âœ… IMPORTANT: do NOT auto-set a time
-    # store date only so the bot asks for time
-            state["selected_slot_start"] = None
-            state["selected_slot_end"] = None
-            state["selected_slot_date"] = extracted["date_mentioned"]  # âœ… add this key
-
+        # ✅ IMPORTANT: do NOT auto-set a time
+        # store date only so the bot asks for time
+        state["selected_slot_start"] = None
+        state["selected_slot_end"] = None
+        state["selected_slot_date"] = extracted["date_mentioned"]  # ✅ add this key
 
     contact = extracted.get("contact_info", {})
     if contact.get("name"):
@@ -135,6 +138,7 @@ CRITICAL RULES:
         state["mentioned_booking_id"] = extracted["booking_id_mentioned"]
 
     return state
+
 
 # ============== NODE 2: Router (decides next step) ==============
 def route_after_parse(state: BookingState) -> str:
@@ -191,6 +195,8 @@ def route_after_parse(state: BookingState) -> str:
     
     # Default: generate a helpful response
     return "general_response_node"
+
+
 # ============== NODE 3: Greet ==============
 
 async def greet_node(state: BookingState) -> BookingState:
@@ -248,32 +254,36 @@ Keep your response concise but informative."""
 # ============== NODE 5: Handle Service Selection ==============
 
 async def handle_service_selection_node(state: BookingState) -> BookingState:
-    """User selected a service - acknowledge and ask for preferred time."""
+    """User has selected a service - ask for the preferred date and time."""
+    
     agent_name = state.get("ai_agent_name", "Assistant")
     tone = state.get("ai_tone", "friendly and professional")
+    business_name = state.get("business_name")
     service_name = state.get("selected_service_name")
-    service_id = state.get("selected_service_id")
-    services = state.get("available_services", [])
-
-    # SERVICE NOT FOUND - tell user what is available
-    if not service_id:
-        available_names = [s["service_name"] for s in services]
-        state["response"] = f"Sorry, that service is not available here. Our available services are: {', '.join(available_names)}. Which one would you like to book?"
+    
+    # Check if the user has selected a valid service
+    if not service_name:
+        # If no service is selected, prompt user to select one
+        services = state.get("available_services", [])
+        service_names = [service["service_name"] for service in services]
+        state["response"] = f"Sorry, that service is not available. The available services are: {', '.join(service_names)}. Which one would you like to book?"
         return state
 
-    system_prompt = f"""You are {agent_name}, a {tone} booking assistant.
+    # If a service is selected, ask the user for their preferred date and time
+    system_prompt = f"""You are {agent_name}, a {tone} booking assistant for {business_name}.
+    
+The user has selected the service: {service_name}
 
-The user has selected: {service_name}
-
-Confirm their selection and ask when they would like to book.
-Ask for their preferred date and time.
-Keep your response brief (2-3 sentences)."""
-
+Ask the user when they would like to book this service.
+Provide the available time slots and let them pick one."""
+    
+    # Retrieve the conversation history and prompt the assistant
     messages = state.get("messages", [])
     response = await call_llm_with_history(system_prompt, messages)
-
+    
+    # Set the AI response and the next action in the flow
     state["response"] = response
-    state["next_action"] = "await_slot_selection"
+    state["next_action"] = "await_slot_selection"  # Move to the next node to select a time slot
     return state
 
 
@@ -399,6 +409,7 @@ async def confirm_booking_node(state: BookingState) -> BookingState:
             available_names = [s["service_name"] for s in services]
             state["response"] = f"Sorry, that service is not available here. Our available services are: {', '.join(available_names)}. Which one would you like to book?"
             return state
+    
     has_slot = state.get("selected_slot_start")
     has_name = state.get("customer_name")
     has_phone = state.get("customer_phone")
@@ -432,53 +443,30 @@ Do NOT say you cannot book - just ask for what's missing."""
         return state
 
     # All info present - booking will be created by chat_service
-    tracking_id = state.get("public_tracking_id", "")
-    service_name = state.get("selected_service_name", "the service")
-    slot = state.get("selected_slot_start", "")
-    customer_name = state.get("customer_name", "")
-
-    # Format slot for display
-    try:
-        from datetime import datetime
-        if "T" in slot:
-            dt = datetime.fromisoformat(slot.replace("Z", "+00:00"))
-            slot_display = dt.strftime("%B %d, %Y at %I:%M %p")
-        else:
-            slot_display = slot
-    except:
-        slot_display = slot
-
-    # âœ… IMPORTANT: Do NOT say "confirmed" here.
-# Booking confirmation happens AFTER payment.
-# ChatService will set status to PENDING_PAYMENT.
-
     service_name = state.get("selected_service_name", "the service")
     slot = state.get("selected_slot_start") or state.get("selected_slot_date") or ""
     customer_name = state.get("customer_name", "")
 
-# Format slot nicely if possible
+    # Format slot nicely if possible
     slot_display = slot
     try:
         from datetime import datetime
         if slot and "T" in slot:
-             dt = datetime.fromisoformat(slot.replace("Z", "+00:00"))
-        slot_display = dt.strftime("%B %d, %Y at %I:%M %p")
+            dt = datetime.fromisoformat(slot.replace("Z", "+00:00"))
+            slot_display = dt.strftime("%B %d, %Y at %I:%M %p")
     except:
         pass
 
     response = (
-    f"Thanks {customer_name}! Iâ€™ve recorded your booking request for {service_name} on {slot_display}. "
-    f"Your booking will be confirmed once payment is completed."
-)
+        f"Thanks {customer_name}! I've recorded your booking request for {service_name} on {slot_display}. "
+        f"Your booking will be confirmed once payment is completed."
+    )
 
     state["response"] = response
-
-# âœ… DO NOT force CONFIRMED
-# Let ChatService/DB decide:
-# state["booking_status"] = "PENDING_PAYMENT" (optional, but safe)
     state["booking_status"] = "PENDING_PAYMENT"
 
     return state
+
 
 # ============== NODE 9: Escalate to Human ==============
 
@@ -511,13 +499,14 @@ Be empathetic and helpful."""
 # ============== NODE 10: General Response ==============
 
 async def general_response_node(state: BookingState) -> BookingState:
+    """Handle general queries or unclear intents."""
+    
     # Check if user mentioned a service that doesn't exist
     if state.get("service_not_found"):
         not_found = state.get("service_not_found")
         available = state.get("available_service_names", [])
         state["response"] = f"Sorry, '{not_found}' is not available here. Our services are: {', '.join(available)}. Which one would you like to book?"
         return state
-    """Handle general queries or unclear intents."""
 
     agent_name = state.get("ai_agent_name", "Assistant")
     business_name = state.get("business_name", "our business")
@@ -653,6 +642,7 @@ Keep your response brief."""
     state["response"] = response
     return state
 
+
 # ============== NODE 13: Cancel Booking ==============
 
 async def cancel_booking_node(state: BookingState) -> BookingState:
@@ -742,6 +732,7 @@ Keep your response brief."""
     state["next_action"] = "await_new_slot"
     return state
 
+
 # ============== NODE 15: Confirm Cancel ==============
 
 async def confirm_cancel_node(state: BookingState) -> BookingState:
@@ -778,8 +769,3 @@ Keep your response brief."""
     
     state["response"] = response
     return state
-
-
-
-
-

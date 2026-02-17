@@ -13,7 +13,7 @@ from app.core.database import get_db
 from app.core.config import settings
 from app.models import AdminUser
 
-router = APIRouter()
+router = APIRouter()                      
 security = HTTPBearer()
 
 # JWT Settings from config
@@ -262,30 +262,23 @@ async def forgot_password(
     request: ForgotPasswordRequest,
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    Request password reset.
-    Only works for the hardcoded admin email.
-    In production, this would send an email with reset link.
-    """
-    # Only allow for hardcoded admin email
-    if request.email != ADMIN_EMAIL:
-        # Don't reveal if email exists or not (security)
-        return MessageResponse(message="If this email exists, a reset link will be sent")
+    """Request password reset - sends email with reset link."""
+    from app.core.email import send_password_reset_email
     
-    # Get admin
+    # Get admin by email
     result = await db.execute(
         select(AdminUser).where(AdminUser.email == request.email)
     )
     admin = result.scalar_one_or_none()
     
+    # Always return same message (security - don't reveal if email exists)
+    success_message = "If this email exists, a reset link will be sent"
+    
     if not admin:
-        return MessageResponse(message="If this email exists, a reset link will be sent")
+        return MessageResponse(message=success_message)
     
     # Generate reset token (valid for 1 hour)
-    reset_token = create_reset_token()
     reset_expires = datetime.utcnow() + timedelta(hours=1)
-    
-    # Store token in JWT format for stateless validation
     reset_payload = {
         "sub": str(admin.id),
         "email": admin.email,
@@ -294,15 +287,13 @@ async def forgot_password(
     }
     reset_jwt = jwt.encode(reset_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
     
-    # In production, send email with reset link
-    # For now, return the token (REMOVE IN PRODUCTION)
-    print(f"Password reset token for {admin.email}: {reset_jwt}")
+    # Send email
+    email_sent = await send_password_reset_email(admin.email, reset_jwt)
     
-    print(f"Password reset token for {admin.email}: {reset_jwt}")
-    return MessageResponse(message=f"Password reset token generated. Token: {reset_jwt}")
-
+    if not email_sent:
+        raise HTTPException(status_code=500, detail="Failed to send reset email")
     
-
+    return MessageResponse(message=success_message)
 
 @router.post("/reset-password", response_model=MessageResponse)
 async def reset_password(

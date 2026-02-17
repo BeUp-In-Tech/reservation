@@ -19,15 +19,9 @@ class ServicePublicResponse(BaseModel):
     slug: str
     service_name: str
     description: str | None
-    base_price: float | None
-    currency: str | None
-    duration_minutes: int | None
-    category: str | None
-    location: str | None
-    is_popular: bool
-    service_type: str
-    max_capacity: int | None
-    icon: str | None
+    timezone: str
+    open_time: str | None
+    close_time: str | None
 
 
 class TimeSlotResponse(BaseModel):
@@ -52,17 +46,15 @@ class BookingPublicResponse(BaseModel):
     customer_name: str | None
     created_at: str | None
 
-
 class BusinessPublicResponse(BaseModel):
     id: str
     business_name: str
     slug: str
-    industry: str
+    service_type_name: str | None
     description: str | None
     phone: str | None
     email: str | None
-    timezone: str
-
+    
 
 # ============== Endpoints ==============
 
@@ -84,13 +76,12 @@ async def get_business_public(
         id=str(business.id),
         business_name=business.business_name,
         slug=business.slug,
-        industry=business.industry,
+        service_type_name=business.service_type_name,
         description=business.description,
         phone=business.phone,
         email=business.email,
-        timezone=business.timezone or "UTC"
+        
     )
-
 
 @router.get("/{business_slug}/services", response_model=list[ServicePublicResponse])
 async def get_services_public(
@@ -139,15 +130,9 @@ async def get_services_public(
             slug=s.slug,
             service_name=s.service_name,
             description=s.description,
-            base_price=float(s.base_price) if s.base_price else None,
-            currency=s.currency,
-            duration_minutes=s.duration_minutes,
-            category=s.category,
-            location=s.location,
-            is_popular=s.is_popular or False,
-            service_type=s.service_type or "IN_PERSON",
-            max_capacity=s.max_capacity,
-            icon=s.icon
+            timezone=s.timezone,
+            open_time=s.open_time.strftime("%H:%M") if s.open_time else None,
+            close_time=s.close_time.strftime("%H:%M") if s.close_time else None,
         )
         for s in services
     ]
@@ -178,15 +163,9 @@ async def get_service_detail_public(
         slug=service.slug,
         service_name=service.service_name,
         description=service.description,
-        base_price=float(service.base_price) if service.base_price else None,
-        currency=service.currency,
-        duration_minutes=service.duration_minutes,
-        category=service.category,
-        location=service.location,
-        is_popular=service.is_popular or False,
-        service_type=service.service_type or "IN_PERSON",
-        max_capacity=service.max_capacity,
-        icon=service.icon
+        timezone=service.timezone,
+        open_time=service.open_time.strftime("%H:%M") if service.open_time else None,
+        close_time=service.close_time.strftime("%H:%M") if service.close_time else None,
     )
 
 
@@ -402,3 +381,17 @@ async def get_service_categories(
     categories = [row[0] for row in result.fetchall() if row[0]]
     
     return categories
+@router.post("/book-business")
+async def book_business(
+    business_slug: str,
+    db: AsyncSession = Depends(get_db)
+):
+    from app.services.chat_service import ChatService
+    chat_service = ChatService(db)
+    
+    try:
+        # Start a new conversation with the selected business
+        conversation = await chat_service.start_conversation(business_slug)
+        return conversation
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))

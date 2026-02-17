@@ -178,12 +178,7 @@ async def update_service(
         service.service_name = request.service_name
     if request.description is not None:
         service.description = request.description
-    if request.category is not None:
-        service.category = request.category
-    if request.is_popular is not None:
-        service.is_popular = request.is_popular
-    if request.max_capacity is not None:
-        service.max_capacity = request.max_capacity
+
     if request.is_active is not None:
         service.is_active = request.is_active
     if request.timezone is not None:
@@ -193,12 +188,6 @@ async def update_service(
     if request.close_time is not None:
         service.close_time = parse_time(request.close_time)
     
-    if request.category is not None:
-        service.category = request.category
-    if request.is_popular is not None:
-        service.is_popular = request.is_popular
-    if request.max_capacity is not None:
-        service.max_capacity = request.max_capacity
 
     service.updated_at = datetime.utcnow()
     await db.commit()
@@ -214,18 +203,24 @@ async def delete_service(
     db: AsyncSession = Depends(get_db),
     current_admin: AdminUser = Depends(get_current_admin)
 ):
+    try:
+        service_uuid = uuid.UUID(sid.strip())
+        business_uuid = uuid.UUID(bid.strip())
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID format")
+
     result = await db.execute(
         select(Service).where(
-            Service.id == uuid.UUID(sid),
-            Service.business_id == uuid.UUID(bid)
+            Service.id == service_uuid,
+            Service.business_id == business_uuid
         )
     )
     service = result.scalar_one_or_none()
+    
     if not service:
         raise HTTPException(status_code=404, detail="Service not found")
 
-    service.is_active = False
-    service.updated_at = datetime.utcnow()
+    await db.delete(service)
     await db.commit()
 
-    return {"message": "Service deactivated successfully"}
+    return {"message": "Service deleted permanently"}
