@@ -3,11 +3,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from pydantic import BaseModel, Field
 from datetime import datetime, time
+from sqlalchemy import delete as sa_delete
 from typing import List
 import uuid
 
 from app.core.database import get_db
 from app.models.business import Business
+from app.models.service import Service
 from app.models.other_models import BusinessOperatingHours, BusinessAISettings, AdminUser
 
 from app.api.v1.admin.auth import get_current_admin
@@ -34,6 +36,15 @@ class BusinessCreate(BaseModel):
     zip_code: str = Field(..., min_length=1, max_length=30)
 
 
+class ServiceInput(BaseModel):
+    service_name: str = Field(..., min_length=1, max_length=200)
+    slug: str = Field(..., min_length=1, max_length=140)
+    description: str | None = None
+    timezone: str = Field(default="Asia/Dhaka", min_length=1, max_length=64)
+    open_time: str | None = "09:00"
+    close_time: str | None = "18:00"
+
+
 class BusinessUpdate(BaseModel):
     business_name: str | None = None
     description: str | None = None
@@ -45,8 +56,10 @@ class BusinessUpdate(BaseModel):
     city: str | None = None
     state: str | None = None
     zip_code: str | None = None
-
-
+    country: str | None = None
+    timezone: str | None = None
+    add_services: list[ServiceInput] | None = None
+    delete_service_ids: list[str] | None = None
 
 class BusinessResponse(BaseModel):
     id: str
@@ -260,7 +273,7 @@ async def update_business(
     db: AsyncSession = Depends(get_db),
     current_admin: AdminUser = Depends(get_current_admin),
 ):
-    """Update a business."""
+    """Update a business. Can also add/delete services."""
     business = await _get_business_or_404(db, business_id)
 
     if request.business_name is not None:
@@ -283,9 +296,50 @@ async def update_business(
         business.state = request.state
     if request.zip_code is not None:
         business.zip_code = request.zip_code
-
+    if request.country is not None:
+        business.country = request.country
+    if request.timezone is not None:
+        business.timezone = request.timezone
 
     business.updated_at = datetime.utcnow()
+
+    # Handle add_services
+    if request.add_services:
+        for svc in request.add_services:
+            new_service = Service(
+                business_id=business.id,
+                slug=svc.slug,
+                service_name=svc.service_name,
+                description=svc.description or "",
+                timezone=svc.timezone,
+                open_time=_parse_time(svc.open_time) if svc.open_time else None,
+                close_time=_parse_time(svc.close_time) if svc.close_time else None,
+                base_price=None,
+                currency="BDT",
+                duration_minutes=60,
+                is_active=True,
+                category="GENERAL",
+                is_popular=False,
+                max_capacity=1,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            )
+            db.add(new_service)
+
+    # Handle delete_service_ids (hard delete)
+    if request.delete_service_ids:
+        for sid in request.delete_service_ids:
+            try:
+                service_uuid = uuid.UUID(sid)
+                await db.execute(
+                    sa_delete(Service).where(
+                        Service.id == service_uuid,
+                        Service.business_id == business.id
+                    )
+                )
+            except ValueError:
+                pass  # Invalid UUID, skip
+
     await db.commit()
     await db.refresh(business)
 
@@ -303,7 +357,6 @@ async def update_business(
         state=business.state,
         zip_code=business.zip_code,
     )
-
 
 @router.delete("/{business_id}", response_model=DeleteResponse)
 async def delete_business(

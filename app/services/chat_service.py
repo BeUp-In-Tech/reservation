@@ -37,47 +37,54 @@ class ChatService:
         user_session_id: str | None = None,
         channel: str = "CHAT"
     ) -> dict:
-        """Start a new conversation for a business."""
+        """Start a new conversation for a business or service."""
         
-        result = await self.db.execute(
-            select(Business).where(Business.slug == business_slug)
-        )
-        business = result.scalar_one_or_none()
-        
-        if not business:
-            raise ValueError(f"Business not found: {business_slug}")
-        
-        conversation = Conversation(
-            business_id=business.id,
-            channel=channel,
-            status="STARTED",
-            user_session_id=user_session_id,
-            started_at=datetime.utcnow(),
-        )
-        self.db.add(conversation)
-        await self.db.flush()
-        
-        business_info = await self._load_business_info(business.id)
-        
-        await self.db.commit()
-        
-        return {
-            "conversation_id": str(conversation.id),
-            "business_id": str(business.id),
-            "business_name": business.business_name,
-            **business_info
-        }
+        # Check if we're booking a business or service
+        if business_slug:
+            result = await self.db.execute(
+                select(Business).where(Business.slug == business_slug)
+            )
+            business = result.scalar_one_or_none()
+            
+            if not business:
+                raise ValueError(f"Business not found: {business_slug}")
+            
+            conversation = Conversation(
+                business_id=business.id,
+                channel=channel,
+                status="STARTED",
+                user_session_id=user_session_id,
+                started_at=datetime.utcnow(),
+            )
+            self.db.add(conversation)
+            await self.db.flush()
+
+            # Get the business info including available services
+            business_info = await self._load_business_info(business.id)
+            
+            await self.db.commit()
+            
+            return {
+                "conversation_id": str(conversation.id),
+                "business_id": str(business.id),
+                "business_name": business.business_name,
+                **business_info
+            }
     
     async def _load_business_info(self, business_id: uuid.UUID) -> dict:
         """Load business info for the chatbot."""
         
+        # Ensure business_id is passed correctly
+        if not business_id:
+            raise ValueError("Business ID is required")
+
+        # Get AI settings for the business
         result = await self.db.execute(
-            select(BusinessAISettings).where(
-                BusinessAISettings.business_id == business_id
-            )
+            select(BusinessAISettings).where(BusinessAISettings.business_id == business_id)
         )
         ai_settings = result.scalar_one_or_none()
         
+        # Get available services for the business
         result = await self.db.execute(
             select(Service).where(
                 Service.business_id == business_id,
@@ -103,7 +110,7 @@ class ChatService:
             "ai_tone": ai_settings.tone_of_voice if ai_settings else "friendly and professional",
             "available_services": services_list,
         }
-    
+
     async def send_message(
         self,
         conversation_id: str,
@@ -263,33 +270,29 @@ class ChatService:
         updated_handoff = await self.handoff_service.get_handoff_by_conversation(conversation_id)
         
         return {
-    "conversation_id": conversation_id,
-    "response": ai_response,
-    "intent": result_state.get("parsed_intent"),
-    "needs_escalation": result_state.get("needs_escalation", False),
-    "selected_service": result_state.get("selected_service_name"),
-    "selected_slot": result_state.get("selected_slot_start"),
-
-    "booking_id": (
-        result_state.get("booking_id")
-        or (updated_booking["booking_id"] if updated_booking else None)
-    ),
-    "public_tracking_id": (
-        result_state.get("public_tracking_id")
-        or (updated_booking["public_tracking_id"] if updated_booking else None)
-    ),
-    "booking_status": (
-        result_state.get("booking_status")
-        or (updated_booking["status"] if updated_booking else None)
-    ),
-
-    "slot_unavailable": result_state.get("slot_unavailable", False),
-    "slot_alternatives": result_state.get("slot_alternatives", []),
-    "handoff_ticket_id": updated_handoff["public_ticket_id"] if updated_handoff else None,
-    "payment_url": result_state.get("payment_url"),
-    "payment_url": result_state.get("payment_url"),
-}
-
+            "conversation_id": conversation_id,
+            "response": ai_response,
+            "intent": result_state.get("parsed_intent"),
+            "needs_escalation": result_state.get("needs_escalation", False),
+            "selected_service": result_state.get("selected_service_name"),
+            "selected_slot": result_state.get("selected_slot_start"),
+            "booking_id": (
+                result_state.get("booking_id")
+                or (updated_booking["booking_id"] if updated_booking else None)
+            ),
+            "public_tracking_id": (
+                result_state.get("public_tracking_id")
+                or (updated_booking["public_tracking_id"] if updated_booking else None)
+            ),
+            "booking_status": (
+                result_state.get("booking_status")
+                or (updated_booking["status"] if updated_booking else None)
+            ),
+            "slot_unavailable": result_state.get("slot_unavailable", False),
+            "slot_alternatives": result_state.get("slot_alternatives", []),
+            "handoff_ticket_id": updated_handoff["public_ticket_id"] if updated_handoff else None,
+            "payment_url": result_state.get("payment_url"),
+        }
     
     async def _handle_special_intents(
         self,
@@ -454,14 +457,14 @@ Is there anything else I can help you with?"""
                 new_state["booking_status"] = "CONTACT_COLLECTED"
                                                                  
                 if booking_id:
-                        conversation_result = await self.db.execute(
-                            select(Conversation).where(Conversation.id == uuid.UUID(conversation_id))
-                                )
-                        conversation = conversation_result.scalar_one()
-                        # BOTH CHAT & VOICE â†’ pending payment
-                        pending_result = await self.booking_service.mark_pending_payment(booking_id)
-                        new_state["payment_url"] = pending_result.get("payment_url")
-                        new_state["booking_status"] = "PENDING_PAYMENT"
+                    conversation_result = await self.db.execute(
+                        select(Conversation).where(Conversation.id == uuid.UUID(conversation_id))
+                    )
+                    conversation = conversation_result.scalar_one()
+                    # BOTH CHAT & VOICE → pending payment
+                    pending_result = await self.booking_service.mark_pending_payment(booking_id)
+                    new_state["payment_url"] = pending_result.get("payment_url")
+                    new_state["booking_status"] = "PENDING_PAYMENT"
 
         # Step 4: Auto-confirm if all data present AND intent is confirm
         # OR if all data was provided in a single message
@@ -497,19 +500,18 @@ Is there anything else I can help you with?"""
                 
                 if should_confirm:
                     pending = await self.booking_service.mark_pending_payment(
-                         booking_id=booking_id,
-                            mode="PAY_LATER"
-    )
+                        booking_id=booking_id,
+                        mode="PAY_LATER"
+                    )
 
                     new_state["booking_status"] = pending["status"]
 
-    # âœ… FORCE correct message (override LangGraph text)
+                    # ✅ FORCE correct message (override LangGraph text)
                     new_state["response"] = (
-        f"Thanks, {new_state.get('customer_name') or ''}! "
-        f"Your booking ID is {pending['public_tracking_id']}. "
-        f"Your booking will be confirmed once the payment is completed."
-    )
-
+                        f"Thanks, {new_state.get('customer_name') or ''}! "
+                        f"Your booking ID is {pending['public_tracking_id']}. "
+                        f"Your booking will be confirmed once the payment is completed."
+                    )
 
         # Step 5: Handle escalation to human
         if new_state.get("needs_escalation") and not old_state.get("handoff_id"):
@@ -596,9 +598,3 @@ Is there anything else I can help you with?"""
             conversation.resolved_at = datetime.utcnow()
             conversation.closed_at = datetime.utcnow()
             await self.db.commit()
-
-
-
-
-
-
