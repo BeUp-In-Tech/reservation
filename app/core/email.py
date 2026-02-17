@@ -8,10 +8,15 @@ import asyncio
 async def send_email(to_email: str, subject: str, body: str) -> bool:
     """Send email using Gmail SMTP."""
     try:
-        # ✅ Run blocking SMTP in thread pool to avoid async issues
         loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(None, _send_email_sync, to_email, subject, body)
+        result = await asyncio.wait_for(
+            loop.run_in_executor(None, _send_email_sync, to_email, subject, body),
+            timeout=30.0  # 30 second timeout
+        )
         return result
+    except asyncio.TimeoutError:
+        print(f"Email timeout: Failed to send to {to_email} within 30 seconds")
+        return False
     except Exception as e:
         print(f"Email error: {e}")
         return False
@@ -20,23 +25,43 @@ async def send_email(to_email: str, subject: str, body: str) -> bool:
 def _send_email_sync(to_email: str, subject: str, body: str) -> bool:
     """Synchronous email sending - runs in thread pool."""
     try:
+        print(f"Attempting to send email to {to_email}")
+        print(f"SMTP_HOST: {settings.SMTP_HOST}")
+        print(f"SMTP_PORT: {settings.SMTP_PORT}")
+        print(f"SMTP_USER: {settings.SMTP_USER}")
+        print(f"FROM_EMAIL: {settings.FROM_EMAIL}")
+        
+        if not settings.SMTP_HOST or not settings.SMTP_USER or not settings.SMTP_PASSWORD:
+            print("Email error: SMTP settings not configured")
+            return False
+
         msg = MIMEMultipart()
         msg["From"] = settings.FROM_EMAIL
         msg["To"] = to_email
         msg["Subject"] = subject
         msg.attach(MIMEText(body, "html"))
 
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
+        print("Connecting to SMTP server...")
+        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10) as server:
+            print("Connected. Starting TLS...")
             server.ehlo()
             server.starttls()
             server.ehlo()
+            print("Logging in...")
             server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+            print("Sending email...")
             server.sendmail(settings.FROM_EMAIL, to_email, msg.as_string())
 
-        print(f"✅ Email sent to {to_email}")
+        print(f"Email sent successfully to {to_email}")
         return True
+    except smtplib.SMTPAuthenticationError as e:
+        print(f"Email auth error: {e} - Check SMTP_PASSWORD (App Password)")
+        return False
+    except smtplib.SMTPException as e:
+        print(f"SMTP error: {e}")
+        return False
     except Exception as e:
-        print(f"Email error: {e}")
+        print(f"Email error: {type(e).__name__}: {e}")
         return False
 
 
