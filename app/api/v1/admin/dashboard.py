@@ -70,3 +70,12 @@ async def get_dashboard(
         total_calls=total_calls,
         recent_bookings=recent_bookings,
     )
+@router.post("/test-expire-bookings")
+async def test_expire_bookings(
+    db: AsyncSession = Depends(get_db),
+    current_admin: AdminUser = Depends(get_current_admin)
+):
+    """Manual trigger for testing booking expiry"""
+    from app.services.booking_expiry_service import expire_unpaid_bookings
+    result = await expire_unpaid_bookings(db)
+    return result

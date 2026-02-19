@@ -1,0 +1,38 @@
+"""init
+
+Revision ID: a367c14926a1
+Revises: 
+Create Date: 2026-02-03 10:19:39.073865
+
+"""
+from typing import Sequence, Union
+
+from alembic import op
+import sqlalchemy as sa
+
+
+# revision identifiers, used by Alembic.
+revision: str = 'a367c14926a1'
+down_revision: Union[str, Sequence[str], None] = None
+branch_labels: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = None
+
+def upgrade() -> None:
+    # ensure schema
+    op.execute("CREATE SCHEMA IF NOT EXISTS core;")
+    op.execute("SET search_path TO core, public;")
+
+    # IMPORTANT: load models so metadata includes AdminUser etc.
+    import app.models  # noqa: F401
+    from app.core.database import Base
+
+    # create all tables
+    Base.metadata.create_all(bind=op.get_bind())
+
+def downgrade() -> None:
+    import app.models  # noqa: F401
+    from app.core.database import Base
+    Base.metadata.drop_all(bind=op.get_bind())
+
+    # optional:
+    # op.execute("DROP SCHEMA IF EXISTS core CASCADE;")
