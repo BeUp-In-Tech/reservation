@@ -1,4 +1,4 @@
-﻿import uuid
+import uuid
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -214,40 +214,51 @@ class ChatService:
         # Handle booking actions based on what LangGraph extracted
         await self._handle_booking_actions(conversation_id, str(conversation.business_id), state, result_state)
         
-        # Check if slot was unavailable and modify response
+
+        # Handle booking actions based on what LangGraph extracted
+        await self._handle_booking_actions(conversation_id, str(conversation.business_id), state, result_state)
+
+        # ? COMMIT all changes first
+        await self.db.commit()
+
         ai_response = result_state.get("response", "I'm sorry, I couldn't process that.")
-        
-        # Skip booking override for cancel/status/reschedule intents
+
         intent = result_state.get("parsed_intent")
         skip_override = intent in ["cancel_booking", "confirm_cancel", "check_status", "reschedule"]
-        
-        updated_booking = await self.booking_service.get_booking_by_conversation(conversation_id)
+
+        # ? Fetch booking ONCE after commit
+        updated_booking = await self.booking_service.get_latest_booking_by_conversation(conversation_id)
+        updated_handoff = await self.handoff_service.get_handoff_by_conversation(conversation_id)
+
+        # ? Single PENDING_PAYMENT override (remove the duplicate)
         if updated_booking and updated_booking["status"] == "PENDING_PAYMENT" and not skip_override:
+            name = updated_booking.get('customer_name') or ''
+            tid = updated_booking['public_tracking_id']
             if conversation.channel == "VOICE":
                 ai_response = (
-                    f"Your booking is created. "
-                    f"It will be confirmed once payment is made. "
-                    f"Your booking ID is {updated_booking['public_tracking_id']}."
+                    f"Your booking is created. It will be confirmed once payment is made. "
+                    f"Your booking ID is {tid}."
                 )
-            else:  # CHAT
+            else:
                 ai_response = (
-                    f"Your booking is created. "
-                    f"Booking ID: {updated_booking['public_tracking_id']}. "
-                    "You can pay now or pay later."
+                    f"Thanks, {name}! Your booking ID is **{tid}**. "
+                    f"Your booking will be confirmed once payment is completed."
                 )
-        if result_state.get("slot_unavailable"):
+
+        # Slot unavailable override - only if slot is STILL unavailable after booking actions
+        if result_state.get("slot_unavailable") and not (updated_booking and updated_booking.get("status") in ["SLOT_SELECTED", "CONTACT_COLLECTED", "PENDING_PAYMENT", "CONFIRMED"]):
             alternatives = result_state.get("slot_alternatives", [])
             if alternatives:
                 alt_text = "\n".join([f"- {alt['start']}" for alt in alternatives[:5]])
                 ai_response = f"I'm sorry, that time slot is no longer available. Here are some alternative times:\n{alt_text}\n\nWhich one would you prefer?"
             else:
                 ai_response = "I'm sorry, that time slot is no longer available. Could you please suggest another time?"
-        
-        # Check if escalation was created and modify response
+
+        # Handoff override
         if result_state.get("handoff_ticket_id") and not existing_handoff:
             ticket_id = result_state.get("handoff_ticket_id")
-            ai_response = f"I've created a support ticket for you. Your ticket ID is **{ticket_id}**. A team member will contact you shortly at the phone number or email you provided. Thank you for your patience!"
-        
+            ai_response = f"I've created a support ticket for you. Your ticket ID is **{ticket_id}**. A team member will contact you shortly."
+
         # Save AI response
         ai_msg_record = ConversationMessage(
             business_id=conversation.business_id,
@@ -257,18 +268,13 @@ class ChatService:
             created_at=datetime.utcnow(),
         )
         self.db.add(ai_msg_record)
-        
-        # Update conversation
+
         conversation.last_message_at = datetime.utcnow()
         if not result_state.get("needs_escalation"):
             conversation.status = "IN_PROGRESS"
-        
+
         await self.db.commit()
-        
-        # Get updated booking info
-        updated_booking = await self.booking_service.get_booking_by_conversation(conversation_id)
-        updated_handoff = await self.handoff_service.get_handoff_by_conversation(conversation_id)
-        
+
         return {
             "conversation_id": conversation_id,
             "response": ai_response,
@@ -285,15 +291,13 @@ class ChatService:
                 or (updated_booking["public_tracking_id"] if updated_booking else None)
             ),
             "booking_status": (
-                result_state.get("booking_status")
-                or (updated_booking["status"] if updated_booking else None)
+                updated_booking["status"] if updated_booking else result_state.get("booking_status")
             ),
             "slot_unavailable": result_state.get("slot_unavailable", False),
             "slot_alternatives": result_state.get("slot_alternatives", []),
             "handoff_ticket_id": updated_handoff["public_ticket_id"] if updated_handoff else None,
             "payment_url": result_state.get("payment_url"),
         }
-    
     async def _handle_special_intents(
         self,
         old_state: BookingState,
@@ -314,7 +318,7 @@ class ChatService:
             if booking_info:
                 result_state["response"] = f"""Here are the details for booking **{mentioned_booking_id}**:
 
-- **Service:** {booking_info['service_name']}
+- **Service:** {booking_info['service_name'] or 'N/A'}
 - **Status:** {booking_info['status']}
 - **Date/Time:** {booking_info['slot_start'] or 'Not scheduled yet'}
 - **Customer:** {booking_info['customer_name'] or 'Not provided'}
@@ -327,6 +331,12 @@ Is there anything else I can help you with?"""
         # Handle cancel_booking - verify booking exists first
         if intent == "cancel_booking":
             tracking_id = mentioned_booking_id or old_state.get("public_tracking_id")
+            if not tracking_id:
+                latest = await self.booking_service.get_latest_booking_by_conversation(
+                    old_state.get("conversation_id", "")
+                )
+                if latest:
+                    tracking_id = latest["public_tracking_id"]
             if tracking_id:
                 try:
                     booking_info = await self.booking_service.get_booking_by_tracking_id(tracking_id)
@@ -343,6 +353,12 @@ Is there anything else I can help you with?"""
         # Handle booking cancellation confirmation
         if intent == "confirm_cancel":
             tracking_id = mentioned_booking_id or old_state.get("public_tracking_id") or result_state.get("booking_to_cancel")
+            if not tracking_id:
+                latest = await self.booking_service.get_latest_booking_by_conversation(
+                    old_state.get("conversation_id", "")
+                )
+                if latest:
+                    tracking_id = latest["public_tracking_id"]
             if tracking_id:
                 try:
                     cancel_result = await self.booking_service.cancel_booking_by_tracking_id(tracking_id)
@@ -354,22 +370,32 @@ Is there anything else I can help you with?"""
                 result_state["response"] = "I don't have a booking ID to cancel. Could you please provide your booking tracking ID (like BK-XXXXXX)?"
         
         # Handle rescheduling
-        if intent == "reschedule" and mentioned_booking_id:
+        if intent == "reschedule":
+            tracking_id = mentioned_booking_id or old_state.get("public_tracking_id")
             new_slot = result_state.get("selected_slot_start")
-            if new_slot:
-                try:
-                    slot_start = datetime.fromisoformat(new_slot.replace("Z", "+00:00")) if "T" in new_slot else datetime.fromisoformat(new_slot)
-                    slot_end = slot_start + timedelta(hours=1)
-                    
-                    reschedule_result = await self.booking_service.reschedule_booking_by_tracking_id(
-                        tracking_id=mentioned_booking_id,
-                        new_slot_start=slot_start,
-                        new_slot_end=slot_end
-                    )
-                    result_state["response"] = f"Your booking **{mentioned_booking_id}** has been rescheduled to **{slot_start.strftime('%B %d, %Y at %I:%M %p')}**. Is there anything else I can help you with?"
-                    result_state["booking_status"] = "RESCHEDULED"
-                except ValueError as e:
-                    result_state["response"] = f"I couldn't reschedule the booking: {str(e)}"
+    
+            if not tracking_id:
+                result_state["response"] = "Please provide your booking ID (like BK-XXXXXX) so I can reschedule it."
+                return
+    
+            if not new_slot:
+                result_state["response"] = f"I found your booking **{tracking_id}**. What new date and time would you like to reschedule to?"
+                result_state["mentioned_booking_id"] = tracking_id
+                return
+    
+            try:
+                slot_start = datetime.fromisoformat(new_slot.replace("Z", "+00:00")) if "T" in new_slot else datetime.fromisoformat(new_slot)
+                slot_end = slot_start + timedelta(hours=1)
+
+                reschedule_result = await self.booking_service.reschedule_booking_by_tracking_id(
+                    tracking_id=tracking_id,
+                    new_slot_start=slot_start,
+                    new_slot_end=slot_end
+        )
+                result_state["response"] = f"Your booking **{tracking_id}** has been rescheduled to **{slot_start.strftime('%B %d, %Y at %I:%M %p')}**. Is there anything else I can help you with?"
+                result_state["booking_status"] = "RESCHEDULED"
+            except ValueError as e:
+                result_state["response"] = f"I couldn't reschedule: {str(e)}"
     
     async def _handle_booking_actions(
         self,
@@ -388,7 +414,9 @@ Is there anything else I can help you with?"""
         intent = new_state.get("parsed_intent")
         
         # Step 1: Create booking if service selected and no booking exists
-        if (new_state.get("selected_service_id") and not old_state.get("booking_id")):
+        if (new_state.get("selected_service_id") 
+            and not old_state.get("booking_id")
+            and not new_state.get("booking_id")):  # ? ADD THIS CHECK
             booking = await self.booking_service.create_booking(
                 business_id=business_id,
                 service_id=new_state["selected_service_id"],
@@ -461,16 +489,19 @@ Is there anything else I can help you with?"""
                         select(Conversation).where(Conversation.id == uuid.UUID(conversation_id))
                     )
                     conversation = conversation_result.scalar_one()
-                    # BOTH CHAT & VOICE → pending payment
+                    # BOTH CHAT & VOICE ? pending payment
                     pending_result = await self.booking_service.mark_pending_payment(booking_id)
                     new_state["payment_url"] = pending_result.get("payment_url")
                     new_state["booking_status"] = "PENDING_PAYMENT"
 
         # Step 4: Auto-confirm if all data present AND intent is confirm
         # OR if all data was provided in a single message
+        # Step 4: Auto-confirm if all data present
         if booking_id:
             booking = await self.booking_service.get_booking(booking_id)
-            
+
+            should_confirm = False  # ? ADD THIS LINE (initialize before use)
+
             if booking:
                 has_service = booking.get("service_id") is not None
                 has_slot = booking.get("slot_start") is not None
@@ -479,10 +510,7 @@ Is there anything else I can help you with?"""
                     booking.get("customer_phone"),
                     booking.get("customer_email")
                 ])
-                
-                # Confirm if:
-                # 1. Intent is confirm_booking AND status is CONTACT_COLLECTED
-                # 2. OR all data provided in one message (multi-info scenario)
+
                 all_data_in_one_message = (
                     new_state.get("selected_service_id") and
                     new_state.get("selected_slot_start") and
@@ -491,28 +519,25 @@ Is there anything else I can help you with?"""
                     new_state.get("customer_email") and
                     not old_state.get("booking_id")
                 )
-                
+
                 should_confirm = (
                     (intent == "confirm_booking" and booking["status"] == "CONTACT_COLLECTED") or
                     (intent == "complete_booking" and has_service and has_slot and has_contact) or
                     (all_data_in_one_message and has_service and has_slot and has_contact)
                 )
-                
-                if should_confirm:
+
+                if should_confirm and booking["status"] != "PENDING_PAYMENT":
                     pending = await self.booking_service.mark_pending_payment(
                         booking_id=booking_id,
                         mode="PAY_LATER"
                     )
 
                     new_state["booking_status"] = pending["status"]
-
-                    # ✅ FORCE correct message (override LangGraph text)
                     new_state["response"] = (
                         f"Thanks, {new_state.get('customer_name') or ''}! "
                         f"Your booking ID is {pending['public_tracking_id']}. "
                         f"Your booking will be confirmed once the payment is completed."
                     )
-
         # Step 5: Handle escalation to human
         if new_state.get("needs_escalation") and not old_state.get("handoff_id"):
             contact_name = new_state.get("customer_name") or old_state.get("customer_name")
@@ -531,7 +556,6 @@ Is there anything else I can help you with?"""
                 )
                 new_state["handoff_id"] = handoff["handoff_id"]
                 new_state["handoff_ticket_id"] = handoff["public_ticket_id"]
-    
     async def get_conversation(self, conversation_id: str) -> dict | None:
         """Get conversation details."""
         
