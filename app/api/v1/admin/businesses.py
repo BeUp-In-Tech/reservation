@@ -1,4 +1,4 @@
-﻿from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from pydantic import BaseModel, Field
@@ -26,7 +26,7 @@ class BusinessCreate(BaseModel):
     business_name: str = Field(..., min_length=1, max_length=200)
     slug: str = Field(..., min_length=1, max_length=120)
     description: str = Field(..., min_length=1)
-    service_type_name: str = Field(..., min_length=1, max_length=120)
+    service_name: str = Field(..., min_length=1, max_length=120)
     contact_fullname: str = Field(..., min_length=1, max_length=120)
     contact_email: str = Field(..., min_length=1, max_length=255)
     contact_phone: str = Field(..., min_length=1, max_length=40)
@@ -38,17 +38,12 @@ class BusinessCreate(BaseModel):
 
 class ServiceInput(BaseModel):
     service_name: str = Field(..., min_length=1, max_length=200)
-    slug: str = Field(..., min_length=1, max_length=140)
-    description: str | None = None
-    timezone: str = Field(default="Asia/Dhaka", min_length=1, max_length=64)
-    open_time: str | None = "09:00"
-    close_time: str | None = "18:00"
 
 
 class BusinessUpdate(BaseModel):
     business_name: str | None = None
     description: str | None = None
-    service_type_name: str | None = None
+    service_name: str | None = None
     contact_fullname: str | None = None
     contact_email: str | None = None
     contact_phone: str | None = None
@@ -66,7 +61,7 @@ class BusinessResponse(BaseModel):
     business_name: str
     slug: str
     description: str | None = None
-    service_type_name: str | None = None
+    service_name: str | None = None
     contact_fullname: str | None = None
     contact_email: str | None = None
     contact_phone: str | None = None
@@ -145,7 +140,7 @@ async def list_businesses(
             business_name=b.business_name,
             slug=b.slug,
             description=b.description,
-            service_type_name=b.service_type_name,
+            service_name=b.service_name,
             contact_fullname=b.contact_person,
             contact_email=b.email,
             contact_phone=b.phone,
@@ -178,7 +173,7 @@ async def create_business(
         business_name=request.business_name,
         slug=request.slug,
         description=request.description,
-        service_type_name=request.service_type_name,
+        service_name=request.service_name,
         contact_person=request.contact_fullname,
         email=request.contact_email,
         phone=request.contact_phone,
@@ -230,7 +225,7 @@ async def create_business(
         business_name=business.business_name,
         slug=business.slug,
         description=business.description,
-        service_type_name=business.service_type_name,
+        service_name=business.service_name,
         contact_fullname=business.contact_person,
         contact_email=business.email,
         contact_phone=business.phone,
@@ -255,7 +250,7 @@ async def get_business(
         business_name=business.business_name,
         slug=business.slug,
         description=business.description,
-        service_type_name=business.service_type_name,
+        service_name=business.service_name,
         contact_fullname=business.contact_person,
         contact_email=business.email,
         contact_phone=business.phone,
@@ -280,8 +275,8 @@ async def update_business(
         business.business_name = request.business_name
     if request.description is not None:
         business.description = request.description
-    if request.service_type_name is not None:
-        business.service_type_name = request.service_type_name
+    if request.service_name is not None:
+        business.service_name = request.service_name
     if request.contact_fullname is not None:
         business.contact_person = request.contact_fullname
     if request.contact_email is not None:
@@ -306,14 +301,15 @@ async def update_business(
     # Handle add_services
     if request.add_services:
         for svc in request.add_services:
+            auto_slug = svc.service_name.lower().replace(" ", "-").replace("'", "")
             new_service = Service(
                 business_id=business.id,
-                slug=svc.slug,
+                slug=auto_slug,
                 service_name=svc.service_name,
-                description=svc.description or "",
-                timezone=svc.timezone,
-                open_time=_parse_time(svc.open_time) if svc.open_time else None,
-                close_time=_parse_time(svc.close_time) if svc.close_time else None,
+                description="",
+                timezone=business.timezone or "Asia/Dhaka",
+                open_time=time(9, 0),
+                close_time=time(18, 0),
                 base_price=None,
                 currency="BDT",
                 duration_minutes=60,
@@ -348,7 +344,7 @@ async def update_business(
         business_name=business.business_name,
         slug=business.slug,
         description=business.description,
-        service_type_name=business.service_type_name,
+        service_name=business.service_name,
         contact_fullname=business.contact_person,
         contact_email=business.email,
         contact_phone=business.phone,
