@@ -1,4 +1,4 @@
-﻿from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
@@ -50,13 +50,32 @@ class BusinessPublicResponse(BaseModel):
     id: str
     business_name: str
     slug: str
-    service_type_name: str | None
+    service_name: str | None
     description: str | None
     phone: str | None
     email: str | None
     
 
 # ============== Endpoints ==============
+
+class PlatformNamePublicResponse(BaseModel):
+    platform_name: str
+
+
+@router.get("/platform-name", response_model=PlatformNamePublicResponse)
+async def get_platform_name_public(
+    db: AsyncSession = Depends(get_db),
+):
+    """Get platform name (public, no auth)."""
+    from app.models import PlatformSettings
+    result = await db.execute(
+        select(PlatformSettings).where(PlatformSettings.key == "platform_name")
+    )
+    setting = result.scalar_one_or_none()
+    return PlatformNamePublicResponse(
+        platform_name=setting.value if setting else "AI Booking System",
+    )
+
 
 @router.get("/{business_slug}", response_model=BusinessPublicResponse)
 async def get_business_public(
@@ -76,7 +95,7 @@ async def get_business_public(
         id=str(business.id),
         business_name=business.business_name,
         slug=business.slug,
-        service_type_name=business.service_type_name,
+        service_name=business.service_name,
         description=business.description,
         phone=business.phone,
         email=business.email,
@@ -381,6 +400,30 @@ async def get_service_categories(
     categories = [row[0] for row in result.fetchall() if row[0]]
     
     return categories
+@router.get("/", response_model=list[BusinessPublicResponse])
+async def list_all_businesses_public(
+    db: AsyncSession = Depends(get_db)
+):
+    """List all active businesses publicly (no auth required)."""
+    result = await db.execute(
+        select(Business).where(Business.is_active == True).order_by(Business.business_name)
+    )
+    businesses = result.scalars().all()
+
+    return [
+        BusinessPublicResponse(
+            id=str(b.id),
+            business_name=b.business_name,
+            slug=b.slug,
+            service_name=b.service_type_name,
+            description=b.description,
+            phone=b.phone,
+            email=b.email,
+        )
+        for b in businesses
+    ]
+
+
 @router.post("/book-business")
 async def book_business(
     business_slug: str,

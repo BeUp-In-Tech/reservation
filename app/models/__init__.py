@@ -1,5 +1,6 @@
-﻿from app.core.database import Base
+from app.core.database import Base
 from app.models.other_models import HandoffRequest
+from app.models.platform_settings import PlatformSettings
 from .business_address import BusinessAddress
 from .business_profile import BusinessProfile
 
@@ -47,5 +48,6 @@ __all__ = [
     "ServiceImage",
     "BusinessAddress",
     "BusinessProfile",
+    "PlatformSettings",
 
 ]

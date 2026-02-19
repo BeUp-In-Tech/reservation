@@ -268,3 +268,73 @@ class EmailService:
         except Exception as e:
             print(f"[EMAIL ERROR] Failed to send to {to_email}: {str(e)}")
             return False
+
+    @staticmethod
+    async def send_contact_form_to_admin(
+        name: str,
+        email: str,
+        subject: str,
+        message: str
+    ) -> bool:
+        """
+        Send contact form submission to admin email.
+        """
+        # Admin email - set this in your .env file as ADMIN_EMAIL
+        admin_email = getattr(settings, 'ADMIN_EMAIL', 'admin@example.com')
+        
+        # Email subject
+        email_subject = f"[Contact Form] {subject}"
+        
+        # HTML email template (see full template in email_service_updated.py)
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                .header {{ background-color: #2196F3; color: white; padding: 20px; text-align: center; }}
+                .content {{ padding: 20px; background-color: #f9f9f9; }}
+                .details {{ background-color: white; padding: 20px; border-radius: 5px; margin: 15px 0; }}
+                .message-box {{ background-color: #fff; padding: 20px; border-left: 4px solid #2196F3; margin: 20px 0; }}
+                .reply-button {{ display: inline-block; background-color: #4CAF50; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; margin: 15px 0; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>📧 New Contact Form Submission</h1>
+                </div>
+                <div class="content">
+                    <p>From: <strong>{name}</strong> ({email})</p>
+                    <p>Subject: {subject}</p>
+                    <div class="message-box">
+                        <p style="white-space: pre-wrap;">{message}</p>
+                    </div>
+                    <p style="text-align: center;">
+                        <a href="mailto:{email}?subject=Re: {subject}" class="reply-button">Reply to {name}</a>
+                    </p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
+        text_content = f"""
+        NEW CONTACT FORM SUBMISSION
+        
+        From: {name}
+        Email: {email}
+        Subject: {subject}
+        
+        Message:
+        {message}
+        """
+        
+        # Send email to admin
+        return await EmailService._send_email(
+            to_email=admin_email,
+            subject=email_subject,
+            html_content=html_content,
+            text_content=text_content
+        )

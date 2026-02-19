@@ -1,4 +1,4 @@
-﻿from fastapi import FastAPI
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
@@ -11,8 +11,10 @@ from app.api.v1.admin.operating_hours import router as admin_hours_router
 from app.api.v1.public.router import router as public_router
 from app.api.v1.payments.router import router as payment_router
 from app.api.v1.admin.dashboard import router as admin_dashboard_router
+from app.api.v1.admin.bookings import router as admin_bookings_router
+from app.api.v1.admin.platform import router as admin_platform_router
 from app.core.scheduler import start_scheduler, stop_scheduler
-
+from app.api.v1.contact.router import router as contact_router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown events"""
@@ -51,7 +53,9 @@ app.include_router(admin_hours_router, prefix="/api/v1/admin", tags=["Admin Oper
 app.include_router(public_router, prefix="/api/v1/public", tags=["Public"])
 app.include_router(payment_router, prefix="/api/v1", tags=["Payments"])
 app.include_router(admin_dashboard_router, prefix="/api/v1/admin", tags=["Admin Dashboard"])
-
+app.include_router(admin_bookings_router, prefix="/api/v1/admin", tags=["Admin Bookings"])
+app.include_router(admin_platform_router, prefix="/api/v1/admin", tags=["Admin Platform"])
+app.include_router(contact_router, prefix="/api/v1", tags=["Contact"])
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
