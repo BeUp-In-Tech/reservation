@@ -21,64 +21,64 @@ def upgrade() -> None:
     
     # Create ENUM types
     op.execute("""
-        DO SilentlyContinue BEGIN
+        DO $$ BEGIN
             CREATE TYPE core.availability_exception_type_enum AS ENUM ('CLOSED', 'MODIFIED_HOURS', 'SPECIAL_EVENT');
-        EXCEPTION WHEN duplicate_object THEN NULL; END SilentlyContinue;
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
     """)
     op.execute("""
-        DO SilentlyContinue BEGIN
+        DO $$ BEGIN
             CREATE TYPE core.handoff_status_enum AS ENUM ('OPEN', 'ASSIGNED', 'RESOLVED', 'CLOSED');
-        EXCEPTION WHEN duplicate_object THEN NULL; END SilentlyContinue;
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
     """)
     op.execute("""
-        DO SilentlyContinue BEGIN
+        DO $$ BEGIN
             CREATE TYPE core.address_type_enum AS ENUM ('PRIMARY', 'BILLING', 'BRANCH');
-        EXCEPTION WHEN duplicate_object THEN NULL; END SilentlyContinue;
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
     """)
     op.execute("""
-        DO SilentlyContinue BEGIN
+        DO $$ BEGIN
             CREATE TYPE core.booking_status_enum AS ENUM ('INITIATED', 'SLOT_SELECTED', 'CONTACT_COLLECTED', 'PAYMENT_PENDING', 'CONFIRMED', 'CANCELLED', 'FAILED', 'HUMAN_HANDOFF', 'PENDING_PAYMENT', 'CANCELED', 'RESCHEDULED', 'EXPIRED', 'PENDING');
-        EXCEPTION WHEN duplicate_object THEN NULL; END SilentlyContinue;
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
     """)
     op.execute("""
-        DO SilentlyContinue BEGIN
+        DO $$ BEGIN
             CREATE TYPE core.resolution_type_enum AS ENUM ('AI_RESOLVED', 'HUMAN_HANDOFF', 'HUMAN_ESCALATED', 'USER_ABANDONED', 'FAILED', 'CALL_REQUESTED');
-        EXCEPTION WHEN duplicate_object THEN NULL; END SilentlyContinue;
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
     """)
     op.execute("""
-        DO SilentlyContinue BEGIN
+        DO $$ BEGIN
             CREATE TYPE core.payment_status_enum AS ENUM ('CREATED', 'PENDING', 'PAID', 'FAILED', 'EXPIRED', 'REFUNDED');
-        EXCEPTION WHEN duplicate_object THEN NULL; END SilentlyContinue;
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
     """)
     op.execute("""
-        DO SilentlyContinue BEGIN
+        DO $$ BEGIN
             CREATE TYPE core.conversation_channel_enum AS ENUM ('CHAT', 'VOICE', 'HUMAN');
-        EXCEPTION WHEN duplicate_object THEN NULL; END SilentlyContinue;
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
     """)
     op.execute("""
-        DO SilentlyContinue BEGIN
+        DO $$ BEGIN
             CREATE TYPE core.conversation_status_enum AS ENUM ('STARTED', 'IN_PROGRESS', 'RESOLVED', 'ABANDONED');
-        EXCEPTION WHEN duplicate_object THEN NULL; END SilentlyContinue;
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
     """)
     op.execute("""
-        DO SilentlyContinue BEGIN
+        DO $$ BEGIN
             CREATE TYPE core.conversation_outcome_enum AS ENUM ('BOOKED', 'ESCALATED', 'DROPPED');
-        EXCEPTION WHEN duplicate_object THEN NULL; END SilentlyContinue;
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
     """)
     op.execute("""
-        DO SilentlyContinue BEGIN
+        DO $$ BEGIN
             CREATE TYPE core.call_status_enum AS ENUM ('IN_PROGRESS', 'COMPLETED', 'ESCALATED', 'ABANDONED', 'FAILED');
-        EXCEPTION WHEN duplicate_object THEN NULL; END SilentlyContinue;
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
     """)
     op.execute("""
-        DO SilentlyContinue BEGIN
+        DO $$ BEGIN
             CREATE TYPE core.call_resolution_enum AS ENUM ('AI_RESOLVED', 'HUMAN_ESCALATED', 'USER_ABANDONED', 'TECHNICAL_FAILURE', 'TRANSFERRED');
-        EXCEPTION WHEN duplicate_object THEN NULL; END SilentlyContinue;
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
     """)
     op.execute("""
-        DO SilentlyContinue BEGIN
+        DO $$ BEGIN
             CREATE TYPE core.call_outcome_enum AS ENUM ('BOOKING_CREATED', 'BOOKING_CANCELLED', 'BOOKING_RESCHEDULED', 'STATUS_PROVIDED', 'INFO_PROVIDED', 'ESCALATED_TO_HUMAN', 'NO_ACTION', 'FAILED');
-        EXCEPTION WHEN duplicate_object THEN NULL; END SilentlyContinue;
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
     """)
 
     # 1. admin_users (no FK dependencies)
@@ -109,13 +109,13 @@ def upgrade() -> None:
         schema="core",
     )
 
-    # 3. businesses (FK to admin_users)
+    # 3. businesses (FK to admin_users) - FIXED: service_name instead of service_type_name
     op.create_table(
         "businesses",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
         sa.Column("slug", sa.String(120), unique=True, nullable=False),
         sa.Column("business_name", sa.String(200), nullable=True),
-        sa.Column("service_type_name", sa.String(120), nullable=True),
+        sa.Column("service_name", sa.String(120), nullable=True),
         sa.Column("timezone", sa.String(64), nullable=True),
         sa.Column("status", sa.String(30), server_default="ACTIVE", nullable=False),
         sa.Column("contact_person", sa.String(120), nullable=True),
@@ -448,9 +448,55 @@ def upgrade() -> None:
         schema="core",
     )
 
+    # 21. admin_business_access
+    op.create_table(
+        "admin_business_access",
+        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column("admin_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("core.admin_users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("business_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("core.businesses.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        schema="core",
+    )
+
+    # 22. business_types
+    op.create_table(
+        "business_types",
+        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column("name", sa.String(200), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        schema="core",
+    )
+
+    # 23. system_events
+    op.create_table(
+        "system_events",
+        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column("event_type", sa.String(100), nullable=True),
+        sa.Column("payload", postgresql.JSONB, nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        schema="core",
+    )
+
+    # 24. platform_settings
+    op.create_table(
+        "platform_settings",
+        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column("key", sa.String(100), unique=True, nullable=False, index=True),
+        sa.Column("value", sa.String(500), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        schema="core",
+    )
+
+    # Insert default platform name
+    op.execute("INSERT INTO core.platform_settings (id, key, value) VALUES (gen_random_uuid(), 'platform_name', 'AI Booking System')")
+
 
 def downgrade() -> None:
     # Drop tables in reverse order
+    op.drop_table("platform_settings", schema="core")
+    op.drop_table("system_events", schema="core")
+    op.drop_table("business_types", schema="core")
+    op.drop_table("admin_business_access", schema="core")
     op.drop_table("call_sessions", schema="core")
     op.drop_table("payment_sessions", schema="core")
     op.drop_table("booking_status_history", schema="core")

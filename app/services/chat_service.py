@@ -34,6 +34,7 @@ class ChatService:
     async def start_conversation(
         self,
         business_slug: str,
+        service_name: str | None = None,
         user_session_id: str | None = None,
         channel: str = "CHAT"
     ) -> dict:
@@ -48,6 +49,20 @@ class ChatService:
             
             if not business:
                 raise ValueError(f"Business not found: {business_slug}")
+            # Validate service exists under this business
+            service_result = await self.db.execute(
+                select(Service).where(
+                    Service.business_id == business.id,
+                    Service.service_name == service_name,
+                    Service.is_active == True
+    )
+)
+            service = service_result.scalar_one_or_none()
+
+            if not service:
+                raise ValueError(f"Service '{service_name}' not found under business '{business_slug}'")
+
+            
             
             conversation = Conversation(
                 business_id=business.id,
@@ -68,6 +83,8 @@ class ChatService:
                 "conversation_id": str(conversation.id),
                 "business_id": str(business.id),
                 "business_name": business.business_name,
+                "service_id": str(service.id),
+                "service_name": service.service_name,
                 **business_info
             }
     

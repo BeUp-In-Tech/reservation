@@ -1,4 +1,4 @@
-﻿from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
@@ -34,6 +34,7 @@ async def start_conversation(
         chat_service = ChatService(db)
         result = await chat_service.start_conversation(
             business_slug=request.business_slug,
+            service_name=request.service_name,
             user_session_id=request.user_session_id,
             channel=request.channel or "CHAT"
         )

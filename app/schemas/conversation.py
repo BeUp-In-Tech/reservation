@@ -1,4 +1,4 @@
-﻿from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field
 from datetime import datetime
 from uuid import UUID
 
@@ -22,6 +22,8 @@ class ChatMessageResponse(ChatMessageBase):
 
 class ConversationStart(BaseModel):
     business_slug: str = Field(..., min_length=1, max_length=120)
+    service_name: str = Field(..., min_length=1, max_length=200, description="Service name under this business")
+    
     user_session_id: str | None = Field(None, max_length=120)
     channel: str | None = "CHAT"
 
