@@ -415,7 +415,7 @@ async def list_all_businesses_public(
             id=str(b.id),
             business_name=b.business_name,
             slug=b.slug,
-            service_name=b.service_type_name,
+            service_name=b.service_name,
             description=b.description,
             phone=b.phone,
             email=b.email,
