@@ -1,4 +1,4 @@
-﻿# app/models/business.py
+# app/models/business.py
 import uuid
 from datetime import datetime
 from sqlalchemy import String, Text, Boolean, DateTime, ForeignKey
@@ -18,7 +18,7 @@ class Business(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     slug: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
     business_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    service_type_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    service_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
 
 
     timezone: Mapped[str | None] = mapped_column(String(64), nullable=True)
