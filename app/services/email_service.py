@@ -4,7 +4,7 @@ from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-
+from app.core.email import send_email
 from app.core.config import settings
 from app.models import Booking, Service, Business
 
@@ -269,7 +269,9 @@ class EmailService:
             print(f"[EMAIL ERROR] Failed to send to {to_email}: {str(e)}")
             return False
 
+    
     @staticmethod
+
     async def send_contact_form_to_admin(
         name: str,
         email: str,
@@ -277,15 +279,11 @@ class EmailService:
         message: str
     ) -> bool:
         """
-        Send contact form submission to admin email.
+        Send contact form submission to admin email using Resend.
         """
-        # Admin email - set this in your .env file as ADMIN_EMAIL
-        admin_email = getattr(settings, 'ADMIN_EMAIL', 'admin@example.com')
-        
-        # Email subject
+        admin_email = getattr(settings, "ADMIN_EMAIL", "admin@example.com")
         email_subject = f"[Contact Form] {subject}"
-        
-        # HTML email template (see full template in email_service_updated.py)
+
         html_content = f"""
         <!DOCTYPE html>
         <html>
@@ -295,7 +293,6 @@ class EmailService:
                 .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
                 .header {{ background-color: #2196F3; color: white; padding: 20px; text-align: center; }}
                 .content {{ padding: 20px; background-color: #f9f9f9; }}
-                .details {{ background-color: white; padding: 20px; border-radius: 5px; margin: 15px 0; }}
                 .message-box {{ background-color: #fff; padding: 20px; border-left: 4px solid #2196F3; margin: 20px 0; }}
                 .reply-button {{ display: inline-block; background-color: #4CAF50; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; margin: 15px 0; }}
             </style>
@@ -319,22 +316,22 @@ class EmailService:
         </body>
         </html>
         """
-        
+
         text_content = f"""
-        NEW CONTACT FORM SUBMISSION
-        
-        From: {name}
-        Email: {email}
-        Subject: {subject}
-        
-        Message:
-        {message}
-        """
-        
-        # Send email to admin
-        return await EmailService._send_email(
+NEW CONTACT FORM SUBMISSION
+
+From: {name}
+Email: {email}
+Subject: {subject}
+
+Message:
+{message}
+        """.strip()
+
+        return await send_email(
             to_email=admin_email,
             subject=email_subject,
-            html_content=html_content,
-            text_content=text_content
+            body=html_content,
+            reply_to=email,   # ✅ so admin can hit Reply and it goes to user
+            text=text_content
         )

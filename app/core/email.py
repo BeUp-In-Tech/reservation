@@ -1,30 +1,52 @@
-import resend
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from app.core.config import settings
-
-
-async def send_email(to_email: str, subject: str, body: str) -> bool:
-    """Send email using Resend API."""
+async def send_email(
+    to_email: str,
+    subject: str,
+    body: str,
+    reply_to: str | None = None,
+    text: str | None = None,
+) -> bool:
+    """Send email using Gmail SMTP."""
     try:
-        if not settings.RESEND_API_KEY:
-            print("Email error: RESEND_API_KEY not configured")
+        smtp_host = settings.SMTP_HOST
+        smtp_port = settings.SMTP_PORT
+        smtp_user = settings.SMTP_USER
+        smtp_password = settings.SMTP_PASSWORD
+        from_email = settings.FROM_EMAIL
+
+        if not smtp_host or not smtp_user or not smtp_password:
+            print("[EMAIL ERROR] SMTP not configured")
             return False
 
-        resend.api_key = settings.RESEND_API_KEY
+        # Create message
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = from_email
+        msg["To"] = to_email
 
-        result = resend.Emails.send({
-            "from": settings.FROM_EMAIL,
-            "to": [to_email],
-            "subject": subject,
-            "html": body,
-        })
+        if reply_to:
+            msg["Reply-To"] = reply_to
 
-        print(f"Email sent to {to_email}: {result}")
+        # Attach text and HTML
+        if text:
+            msg.attach(MIMEText(text, "plain")) 
+        msg.attach(MIMEText(body, "html"))
+
+        # Send email
+        with smtplib.SMTP(smtp_host, smtp_port) as server:
+            server.starttls()
+            server.login(smtp_user, smtp_password)
+            server.sendmail(from_email, to_email, msg.as_string())
+
+        print(f"[EMAIL] Sent to {to_email}: {subject}")
         return True
+
     except Exception as e:
-        print(f"Email error: {e}")
+        print(f"[EMAIL ERROR] Failed to send to {to_email}: {e}")
         return False
-
-
 async def send_password_reset_email(to_email: str, reset_token: str) -> bool:
     """Send password reset email with branded template."""
 

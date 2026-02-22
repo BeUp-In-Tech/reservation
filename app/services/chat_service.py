@@ -185,6 +185,34 @@ class ChatService:
         
         messages.append({"role": "user", "content": user_message})
         
+        # Check if a service was pre-selected (first AI message exists but no booking yet)
+        pre_selected_service_id = None
+        pre_selected_service_name = None
+        if not existing_booking and len(messages) >= 2:
+            # First message is AI greeting with pre-selected service
+            first_msg = messages[0].get("content", "") if messages[0].get("role") == "assistant" else ""
+            if "You've selected **" in first_msg:
+                # Find which service was selected
+                for svc in business_info.get("available_services", []):
+                    if svc["service_name"] in first_msg:
+                        pre_selected_service_id = svc["id"]
+                        pre_selected_service_name = svc["service_name"]
+                        break
+
+        # Check if a service was pre-selected (first AI message exists but no booking yet)
+        pre_selected_service_id = None
+        pre_selected_service_name = None
+        if not existing_booking and len(messages) >= 2:
+            # First message is AI greeting with pre-selected service
+            first_msg = messages[0].get("content", "") if messages[0].get("role") == "assistant" else ""
+            if "You've selected **" in first_msg:
+                # Find which service was selected
+                for svc in business_info.get("available_services", []):
+                    if svc["service_name"] in first_msg:
+                        pre_selected_service_id = svc["id"]
+                        pre_selected_service_name = svc["service_name"]
+                        break
+
         # Build state for LangGraph - include existing booking data
         state: BookingState = {
             "conversation_id": conversation_id,
@@ -200,6 +228,16 @@ class ChatService:
             "slot_alternatives": [],
             "current_flow": None,
         }
+
+        # Inject pre-selected service into state
+        if pre_selected_service_id and not existing_booking:
+            state["selected_service_id"] = pre_selected_service_id
+            state["selected_service_name"] = pre_selected_service_name
+
+        # Inject pre-selected service into state
+        if pre_selected_service_id and not existing_booking:
+            state["selected_service_id"] = pre_selected_service_id
+            state["selected_service_name"] = pre_selected_service_name
         
         # Add existing booking data to state if exists
         if existing_booking:
