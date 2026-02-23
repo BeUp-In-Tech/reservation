@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
     FROM_EMAIL: str = "noreply@example.com"
-    RESEND_API_KEY: str = ""
+    SENDGRID_API_KEY: str = ""
 
 
 @lru_cache
