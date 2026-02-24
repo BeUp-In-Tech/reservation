@@ -30,10 +30,6 @@ class Settings(BaseSettings):
     PAYMENT_CANCEL_URL: str = "https://yourdomain.com/payment/cancel"
 
     # Email
-    SMTP_HOST: str = ""
-    SMTP_PORT: int = 587
-    SMTP_USER: str = ""
-    SMTP_PASSWORD: str = ""
     FROM_EMAIL: str = "noreply@example.com"
     SENDGRID_API_KEY: str = ""
 

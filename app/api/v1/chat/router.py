@@ -34,7 +34,7 @@ async def start_conversation(
         chat_service = ChatService(db)
         result = await chat_service.start_conversation(
             business_slug=request.business_slug,
-            service_name=request.service_name,
+            service_id=request.service_id,
             user_session_id=request.user_session_id,
             channel=request.channel or "CHAT"
         )
