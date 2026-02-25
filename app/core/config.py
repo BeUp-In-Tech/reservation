@@ -25,13 +25,18 @@ class Settings(BaseSettings):
     STRIPE_SECRET_KEY: str = ""
     STRIPE_PUBLISHABLE_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""
-
     PAYMENT_SUCCESS_URL: str = "https://yourdomain.com/payment/success"
     PAYMENT_CANCEL_URL: str = "https://yourdomain.com/payment/cancel"
 
     # Email
     FROM_EMAIL: str = "noreply@example.com"
     SENDGRID_API_KEY: str = ""
+
+    # Twilio
+    TWILIO_ACCOUNT_SID: str = ""
+    TWILIO_AUTH_TOKEN: str = ""
+    TWILIO_PHONE_NUMBER: str = ""
+    BASE_URL: str = ""  # Your server's public URL (e.g., https://your-app.onrender.com)
 
 
 @lru_cache

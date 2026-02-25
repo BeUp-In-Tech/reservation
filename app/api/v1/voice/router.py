@@ -1,33 +1,54 @@
-﻿from fastapi import APIRouter, Depends, HTTPException
+﻿"""
+Twilio Voice Webhook Router.
+Rule-based voice flow using TwiML - no AI/LLM.
+
+Twilio calls these endpoints and receives TwiML XML responses.
+Flow is driven by DTMF key presses (digits).
+
+FLOW:
+  /twilio/incoming -> greeting + gather (1=details, 2=no)
+  /twilio/after-greeting -> routes based on digit
+  /twilio/after-details -> service details + gather (1=again, 0=book, 9=human, 8=bye)
+  /twilio/after-details-choice -> routes based on digit
+  /twilio/how-can-help -> gather (1=details, 0=book, 9=human, 8=bye)
+  /twilio/help-choice -> routes based on digit
+  /twilio/goodbye -> end call
+  /twilio/escalate -> end call with escalation
+  /twilio/book-redirect -> end call, trigger chat handoff
+"""
+
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from pydantic import BaseModel
 from datetime import datetime
 import uuid as uuid_lib
 
 from app.core.database import get_db
+from app.core.config import settings
+from app.services.voice_flow_service import VoiceFlowService
 from app.services.call_session_service import CallSessionService
-from app.services.voice_chat_service import VoiceChatService
-from app.models import CallSession, Conversation, ConversationMessage
-
+from app.services.handoff_service import HandoffService
+from app.models import CallSession, Conversation, ConversationMessage, Business
 
 router = APIRouter()
 
 
+def twiml_response(twiml: str) -> Response:
+    """Return TwiML XML response."""
+    return Response(content=twiml, media_type="application/xml")
+
+
+# ==================== INITIATE CALL (API - called by frontend) ====================
+
+from pydantic import BaseModel
+
+
 class StartCallRequest(BaseModel):
     business_id: str
+    service_id: str
     caller_phone: str | None = None
     provider_call_id: str | None = None
-
-
-class VoiceMessageRequest(BaseModel):
-    call_session_id: str
-    message: str
-
-
-class EndCallRequest(BaseModel):
-    call_session_id: str
-    pressed_00: bool = False
 
 
 class ChatHandoffResponse(BaseModel):
@@ -37,169 +58,444 @@ class ChatHandoffResponse(BaseModel):
     first_message: str
 
 
-# ============== Endpoints ==============
-
 @router.post("/calls/start")
 async def start_call(
     request: StartCallRequest,
     db: AsyncSession = Depends(get_db)
 ):
-    """Start a new voice call session - INFO ONLY mode."""
-    call_service = CallSessionService(db)
+    """
+    Start a new voice call session.
+    Called by frontend when customer clicks 'Call' on a service card.
+    Returns call session info. Frontend then initiates Twilio call.
+    """
+    from twilio.rest import Client
 
-    result = await call_service.start_call(
+    voice_flow = VoiceFlowService(db)
+
+    # Validate business
+    biz = await voice_flow.get_business(request.business_id)
+    if not biz:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    # Validate service belongs to business
+    svc = await voice_flow.get_service(request.service_id)
+    if not svc:
+        raise HTTPException(status_code=404, detail="Service not found")
+    if svc["business_id"] != request.business_id:
+        raise HTTPException(status_code=400, detail="Service does not belong to this business")
+
+    # Create call session
+    call_service = CallSessionService(db)
+    call_result = await call_service.start_call(
         business_id=request.business_id,
         caller_phone=request.caller_phone,
         provider_call_id=request.provider_call_id,
         channel="VOICE"
     )
 
-    result["greeting"] = "Welcome! I can help you with information about our services. What would you like to know?"
-    result["mode"] = "INFO_ONLY"
-
-    return result
-
-
-@router.post("/calls/message")
-async def process_voice_message(
-    request: VoiceMessageRequest,
-    db: AsyncSession = Depends(get_db)
-):
-    """Process voice message - INFO ONLY, no booking."""
-    
-    # Check if user pressed 00 - end call and redirect to chat
-    if request.message.strip() == "00":
-        # Auto-end call with pressed_00=True
-        end_request = EndCallRequest(call_session_id=request.call_session_id, pressed_00=True)
-        return await end_call(end_request, db)
-    
-    # Find call session
-    try:
-        call_uuid = uuid_lib.UUID(request.call_session_id)
-        result = await db.execute(
-            select(CallSession).where(CallSession.id == call_uuid)
-        )
-    except ValueError:
-        result = await db.execute(
-            select(CallSession).where(CallSession.public_call_id == request.call_session_id)
-        )
-
-    call_session = result.scalar_one_or_none()
-
-    if not call_session:
-        raise HTTPException(status_code=404, detail="Call session not found")
-
-    # Get conversation history
-    history = []
-    if call_session.conversation_id:
-        msg_result = await db.execute(
-            select(ConversationMessage)
-            .where(ConversationMessage.conversation_id == call_session.conversation_id)
-            .order_by(ConversationMessage.created_at)
-        )
-        messages = msg_result.scalars().all()
-        history = [{"role": m.role, "content": m.content} for m in messages]
-
-    # Process message (INFO ONLY)
-    voice_service = VoiceChatService(db)
-    chat_result = await voice_service.process_voice_message(
-        business_id=str(call_session.business_id),
-        user_message=request.message,
-        conversation_history=history
+    # Store service_id in extra_data
+    result = await db.execute(
+        select(CallSession).where(CallSession.id == uuid_lib.UUID(call_result["call_session_id"]))
     )
-
-    # Save messages to conversation
-    if call_session.conversation_id:
-        user_msg = ConversationMessage(
-            business_id=call_session.business_id,
-            conversation_id=call_session.conversation_id,
-            role="user",
-            content=request.message,
-            created_at=datetime.utcnow()
-        )
-        ai_msg = ConversationMessage(
-            business_id=call_session.business_id,
-            conversation_id=call_session.conversation_id,
-            role="assistant",
-            content=chat_result["response"],
-            created_at=datetime.utcnow()
-        )
-        db.add(user_msg)
-        db.add(ai_msg)
-        await db.commit()
-
-    return {
-        "response": chat_result["response"],
-        "ready_to_book": chat_result.get("ready_to_book", False),
-        "press_00": chat_result.get("press_00", False),
+    call_session = result.scalar_one()
+    call_session.extra_data = {
+        "service_id": request.service_id,
+        "business_id": request.business_id,
     }
-
-
-@router.post("/calls/end")
-async def end_call(
-    request: EndCallRequest,
-    db: AsyncSession = Depends(get_db)
-):
-    """End voice call - if pressed_00, return chat handoff info."""
-    
-    # Find call session
-    try:
-        call_uuid = uuid_lib.UUID(request.call_session_id)
-        result = await db.execute(
-            select(CallSession).where(CallSession.id == call_uuid)
-        )
-    except ValueError:
-        result = await db.execute(
-            select(CallSession).where(CallSession.public_call_id == request.call_session_id)
-        )
-
-    call_session = result.scalar_one_or_none()
-
-    if not call_session:
-        raise HTTPException(status_code=404, detail="Call session not found")
-
-    # Update call session
-    call_session.status = "COMPLETED"
-    call_session.ended_at = datetime.utcnow()
-    
-    if call_session.started_at:
-        duration = (datetime.utcnow() - call_session.started_at.replace(tzinfo=None)).total_seconds()
-        call_session.duration_seconds = int(duration)
-
-    if request.pressed_00:
-        call_session.resolution_type = "AI_RESOLVED"
-        call_session.outcome = "INFO_PROVIDED"
-        
-        # Mark for chat handoff
-        call_session.extra_data = {
-            "handoff_to_chat": True,
-            "pressed_00": True,
-            "call_ended_at": datetime.utcnow().isoformat()
-        }
-    else:
-        call_session.resolution_type = "USER_ABANDONED"
-        call_session.outcome = "NO_ACTION"
-
     await db.commit()
 
-    response = {
-        "success": True,
-        "call_session_id": str(call_session.id),
-        "public_call_id": call_session.public_call_id,
-        "status": call_session.status,
-        "duration_seconds": call_session.duration_seconds,
-    }
+    # If caller_phone provided, initiate outbound Twilio call
+    if request.caller_phone and settings.TWILIO_ACCOUNT_SID and settings.TWILIO_AUTH_TOKEN:
+        try:
+            client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
+            base_url = settings.BASE_URL.rstrip("/")
 
-    # If pressed 00, include chat handoff info
-    if request.pressed_00:
-        response["redirect_to_chat"] = True
-        response["chat_handoff"] = {
-            "business_id": str(call_session.business_id),
-            "call_session_id": str(call_session.id),
-        }
+            call = client.calls.create(
+                to=request.caller_phone,
+                from_=settings.TWILIO_PHONE_NUMBER,
+                url=f"{base_url}/api/v1/voice/twilio/incoming?call_session_id={call_result['call_session_id']}&service_id={request.service_id}&business_id={request.business_id}",
+                method="POST",
+            )
+            call_session.provider_call_id = call.sid
+            await db.commit()
 
-    return response
+            call_result["twilio_call_sid"] = call.sid
+        except Exception as e:
+            call_result["twilio_error"] = str(e)
 
+    call_result["service_id"] = request.service_id
+    call_result["service_name"] = svc["service_name"]
+    call_result["mode"] = "RULE_BASED"
+
+    return call_result
+
+
+# ==================== TWILIO WEBHOOKS ====================
+
+@router.post("/twilio/incoming")
+async def twilio_incoming(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Twilio calls this URL when the call connects.
+    Greets the customer and asks if they want service details.
+    """
+    form = await request.form()
+    call_session_id = request.query_params.get("call_session_id", "")
+    service_id = request.query_params.get("service_id", "")
+    business_id = request.query_params.get("business_id", "")
+
+    voice_flow = VoiceFlowService(db)
+    greeting = await voice_flow.get_greeting(business_id, service_id)
+
+    base_url = settings.BASE_URL.rstrip("/")
+    action_url = f"{base_url}/api/v1/voice/twilio/after-greeting?call_session_id={call_session_id}&service_id={service_id}&business_id={business_id}"
+
+    twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Gather input="dtmf" numDigits="1" action="{action_url}" method="POST" timeout="10">
+        <Say voice="Polly.Joanna">{greeting}</Say>
+    </Gather>
+    <Say voice="Polly.Joanna">We didn't receive any input. Goodbye!</Say>
+    <Hangup/>
+</Response>"""
+
+    return twiml_response(twiml)
+
+
+@router.post("/twilio/after-greeting")
+async def twilio_after_greeting(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """After greeting: 1=hear details, 2=no thanks."""
+    form = await request.form()
+    digit = form.get("Digits", "")
+    call_session_id = request.query_params.get("call_session_id", "")
+    service_id = request.query_params.get("service_id", "")
+    business_id = request.query_params.get("business_id", "")
+
+    base_url = settings.BASE_URL.rstrip("/")
+    params = f"call_session_id={call_session_id}&service_id={service_id}&business_id={business_id}"
+
+    if digit == "1":
+        # YES - read service details
+        return Response(
+            content=f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Redirect method="POST">{base_url}/api/v1/voice/twilio/after-details?{params}</Redirect>
+</Response>""",
+            media_type="application/xml"
+        )
+    elif digit == "2":
+        # NO - how can I help
+        return Response(
+            content=f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Redirect method="POST">{base_url}/api/v1/voice/twilio/how-can-help?{params}</Redirect>
+</Response>""",
+            media_type="application/xml"
+        )
+    else:
+        # Invalid input - repeat
+        voice_flow = VoiceFlowService(db)
+        greeting = await voice_flow.get_greeting(business_id, service_id)
+        action_url = f"{base_url}/api/v1/voice/twilio/after-greeting?{params}"
+
+        return twiml_response(f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say voice="Polly.Joanna">Sorry, that wasn't a valid option.</Say>
+    <Gather input="dtmf" numDigits="1" action="{action_url}" method="POST" timeout="10">
+        <Say voice="Polly.Joanna">{greeting}</Say>
+    </Gather>
+    <Say voice="Polly.Joanna">We didn't receive any input. Goodbye!</Say>
+    <Hangup/>
+</Response>""")
+
+
+@router.post("/twilio/after-details")
+async def twilio_after_details(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Read service details, then ask what next."""
+    form = await request.form()
+    service_id = request.query_params.get("service_id", "")
+    call_session_id = request.query_params.get("call_session_id", "")
+    business_id = request.query_params.get("business_id", "")
+
+    voice_flow = VoiceFlowService(db)
+    details = await voice_flow.get_service_details_text(service_id)
+    after_prompt = await voice_flow.get_after_details_prompt()
+
+    base_url = settings.BASE_URL.rstrip("/")
+    params = f"call_session_id={call_session_id}&service_id={service_id}&business_id={business_id}"
+    action_url = f"{base_url}/api/v1/voice/twilio/after-details-choice?{params}"
+
+    twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say voice="Polly.Joanna">Here are the details. {details}</Say>
+    <Pause length="1"/>
+    <Gather input="dtmf" numDigits="1" action="{action_url}" method="POST" timeout="10">
+        <Say voice="Polly.Joanna">{after_prompt}</Say>
+    </Gather>
+    <Say voice="Polly.Joanna">We didn't receive any input. Goodbye!</Say>
+    <Hangup/>
+</Response>"""
+
+    return twiml_response(twiml)
+
+
+@router.post("/twilio/after-details-choice")
+async def twilio_after_details_choice(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """After details: 1=again, 0=book via chat, 9=human, 8=bye."""
+    form = await request.form()
+    digit = form.get("Digits", "")
+    call_session_id = request.query_params.get("call_session_id", "")
+    service_id = request.query_params.get("service_id", "")
+    business_id = request.query_params.get("business_id", "")
+
+    base_url = settings.BASE_URL.rstrip("/")
+    params = f"call_session_id={call_session_id}&service_id={service_id}&business_id={business_id}"
+
+    if digit == "1":
+        # Hear details again
+        return twiml_response(f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Redirect method="POST">{base_url}/api/v1/voice/twilio/after-details?{params}</Redirect>
+</Response>""")
+
+    elif digit == "0":
+        # Book via chat
+        return twiml_response(f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Redirect method="POST">{base_url}/api/v1/voice/twilio/book-redirect?{params}</Redirect>
+</Response>""")
+
+    elif digit == "9":
+        # Human escalation
+        return twiml_response(f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Redirect method="POST">{base_url}/api/v1/voice/twilio/escalate?{params}</Redirect>
+</Response>""")
+
+    elif digit == "8":
+        # Goodbye
+        return twiml_response(f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Redirect method="POST">{base_url}/api/v1/voice/twilio/goodbye?{params}</Redirect>
+</Response>""")
+
+    else:
+        # Invalid - repeat options
+        voice_flow = VoiceFlowService(db)
+        not_understood = await voice_flow.get_not_understood_message()
+        action_url = f"{base_url}/api/v1/voice/twilio/after-details-choice?{params}"
+
+        return twiml_response(f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Gather input="dtmf" numDigits="1" action="{action_url}" method="POST" timeout="10">
+        <Say voice="Polly.Joanna">{not_understood}</Say>
+    </Gather>
+    <Say voice="Polly.Joanna">We didn't receive any input. Goodbye!</Say>
+    <Hangup/>
+</Response>""")
+
+
+@router.post("/twilio/how-can-help")
+async def twilio_how_can_help(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """User said no to details - offer options."""
+    form = await request.form()
+    call_session_id = request.query_params.get("call_session_id", "")
+    service_id = request.query_params.get("service_id", "")
+    business_id = request.query_params.get("business_id", "")
+
+    voice_flow = VoiceFlowService(db)
+    prompt = await voice_flow.get_how_can_help_prompt()
+
+    base_url = settings.BASE_URL.rstrip("/")
+    params = f"call_session_id={call_session_id}&service_id={service_id}&business_id={business_id}"
+    action_url = f"{base_url}/api/v1/voice/twilio/help-choice?{params}"
+
+    return twiml_response(f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Gather input="dtmf" numDigits="1" action="{action_url}" method="POST" timeout="10">
+        <Say voice="Polly.Joanna">{prompt}</Say>
+    </Gather>
+    <Say voice="Polly.Joanna">We didn't receive any input. Goodbye!</Say>
+    <Hangup/>
+</Response>""")
+
+
+@router.post("/twilio/help-choice")
+async def twilio_help_choice(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Handle choice from how-can-help: 1=details, 0=book, 9=human, 8=bye."""
+    form = await request.form()
+    digit = form.get("Digits", "")
+    call_session_id = request.query_params.get("call_session_id", "")
+    service_id = request.query_params.get("service_id", "")
+    business_id = request.query_params.get("business_id", "")
+
+    base_url = settings.BASE_URL.rstrip("/")
+    params = f"call_session_id={call_session_id}&service_id={service_id}&business_id={business_id}"
+
+    if digit == "1":
+        return twiml_response(f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Redirect method="POST">{base_url}/api/v1/voice/twilio/after-details?{params}</Redirect>
+</Response>""")
+
+    elif digit == "0":
+        return twiml_response(f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Redirect method="POST">{base_url}/api/v1/voice/twilio/book-redirect?{params}</Redirect>
+</Response>""")
+
+    elif digit == "9":
+        return twiml_response(f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Redirect method="POST">{base_url}/api/v1/voice/twilio/escalate?{params}</Redirect>
+</Response>""")
+
+    elif digit == "8":
+        return twiml_response(f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Redirect method="POST">{base_url}/api/v1/voice/twilio/goodbye?{params}</Redirect>
+</Response>""")
+
+    else:
+        voice_flow = VoiceFlowService(db)
+        not_understood = await voice_flow.get_not_understood_message()
+        action_url = f"{base_url}/api/v1/voice/twilio/help-choice?{params}"
+
+        return twiml_response(f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Gather input="dtmf" numDigits="1" action="{action_url}" method="POST" timeout="10">
+        <Say voice="Polly.Joanna">{not_understood}</Say>
+    </Gather>
+    <Say voice="Polly.Joanna">We didn't receive any input. Goodbye!</Say>
+    <Hangup/>
+</Response>""")
+
+
+# ==================== TERMINAL ACTIONS ====================
+
+@router.post("/twilio/goodbye")
+async def twilio_goodbye(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """End the call with a goodbye message."""
+    form = await request.form()
+    call_session_id = request.query_params.get("call_session_id", "")
+
+    voice_flow = VoiceFlowService(db)
+    goodbye = await voice_flow.get_goodbye_message()
+
+    # Update call session
+    await _end_call_session(db, call_session_id, "COMPLETED", "AI_RESOLVED", "INFO_PROVIDED")
+
+    return twiml_response(f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say voice="Polly.Joanna">{goodbye}</Say>
+    <Hangup/>
+</Response>""")
+
+
+@router.post("/twilio/escalate")
+async def twilio_escalate(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Escalate to human - end call for now."""
+    form = await request.form()
+    call_session_id = request.query_params.get("call_session_id", "")
+    business_id = request.query_params.get("business_id", "")
+
+    voice_flow = VoiceFlowService(db)
+    escalation_msg = await voice_flow.get_escalation_message()
+
+    # Create handoff request
+    if call_session_id:
+        try:
+            result = await db.execute(
+                select(CallSession).where(CallSession.id == uuid_lib.UUID(call_session_id))
+            )
+            call_session = result.scalar_one_or_none()
+
+            if call_session and call_session.conversation_id:
+                handoff_service = HandoffService(db)
+                await handoff_service.create_handoff(
+                    business_id=business_id or str(call_session.business_id),
+                    conversation_id=str(call_session.conversation_id),
+                    reason="Customer requested human assistance via phone",
+                    contact_name=None,
+                    contact_phone=call_session.caller_phone,
+                )
+        except Exception:
+            pass
+
+    await _end_call_session(db, call_session_id, "COMPLETED", "HUMAN_ESCALATED", "ESCALATED_TO_HUMAN")
+
+    return twiml_response(f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say voice="Polly.Joanna">{escalation_msg}</Say>
+    <Hangup/>
+</Response>""")
+
+
+@router.post("/twilio/book-redirect")
+async def twilio_book_redirect(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Redirect to chat for booking - end call."""
+    form = await request.form()
+    call_session_id = request.query_params.get("call_session_id", "")
+    service_id = request.query_params.get("service_id", "")
+    business_id = request.query_params.get("business_id", "")
+
+    voice_flow = VoiceFlowService(db)
+    redirect_msg = await voice_flow.get_booking_redirect_message()
+
+    # Mark call session for chat handoff
+    if call_session_id:
+        try:
+            result = await db.execute(
+                select(CallSession).where(CallSession.id == uuid_lib.UUID(call_session_id))
+            )
+            call_session = result.scalar_one_or_none()
+            if call_session:
+                call_session.extra_data = {
+                    **(call_session.extra_data or {}),
+                    "handoff_to_chat": True,
+                    "service_id": service_id,
+                    "business_id": business_id,
+                }
+                await db.commit()
+        except Exception:
+            pass
+
+    await _end_call_session(db, call_session_id, "COMPLETED", "AI_RESOLVED", "BOOKING_CREATED")
+
+    return twiml_response(f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say voice="Polly.Joanna">{redirect_msg}</Say>
+    <Hangup/>
+</Response>""")
+
+
+# ==================== CHAT HANDOFF (called by frontend after call) ====================
 
 @router.post("/calls/{call_session_id}/handoff-to-chat", response_model=ChatHandoffResponse)
 async def handoff_to_chat(
@@ -207,70 +503,57 @@ async def handoff_to_chat(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Create chat conversation after voice call ends with 00.
-    Returns conversation_id and AI's first message asking for booking details.
+    Create chat conversation after voice call ends with press 0.
+    Returns conversation_id so frontend can open chat with service pre-selected.
     """
-    
-    # Find call session
-    try:
-        call_uuid = uuid_lib.UUID(call_session_id)
-        result = await db.execute(
-            select(CallSession).where(CallSession.id == call_uuid)
-        )
-    except ValueError:
-        result = await db.execute(
-            select(CallSession).where(CallSession.public_call_id == call_session_id)
-        )
-
+    result = await db.execute(
+        select(CallSession).where(CallSession.id == uuid_lib.UUID(call_session_id))
+    )
     call_session = result.scalar_one_or_none()
 
     if not call_session:
         raise HTTPException(status_code=404, detail="Call session not found")
 
-    # Create new conversation for chat
-    conversation = Conversation(
-        business_id=call_session.business_id,
-        channel="CHAT",
-        status="STARTED",
-        started_at=datetime.utcnow(),
+    extra = call_session.extra_data or {}
+    service_id = extra.get("service_id")
+    business_id = extra.get("business_id", str(call_session.business_id))
+
+    # Use the chat service to start conversation with pre-selected service
+    from app.services.chat_service import ChatService
+    chat_service = ChatService(db)
+
+    # Get business slug
+    biz_result = await db.execute(
+        select(Business).where(Business.id == call_session.business_id)
     )
-    db.add(conversation)
-    await db.flush()
+    business = biz_result.scalar_one_or_none()
+
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    chat_result = await chat_service.start_conversation(
+        business_slug=business.slug,
+        service_id=service_id,
+        user_session_id=f"voice-handoff-{call_session_id}",
+        channel="CHAT",
+    )
 
     # Link conversation to call session
-    call_session.extra_data = call_session.extra_data or {}
-    call_session.extra_data["chat_conversation_id"] = str(conversation.id)
-
-    # Create AI's first message asking for details
-    first_message = """Welcome! I'm ready to help you complete your booking.
-
-Please provide the following details:
-1. Which service would you like to book?
-2. What date and time?
-3. Your name
-4. Your email
-5. Your phone number
-
-You can provide all details in one message or one at a time."""
-
-    ai_msg = ConversationMessage(
-        business_id=call_session.business_id,
-        conversation_id=conversation.id,
-        role="assistant",
-        content=first_message,
-        created_at=datetime.utcnow()
-    )
-    db.add(ai_msg)
-
+    call_session.extra_data = {
+        **extra,
+        "chat_conversation_id": chat_result["conversation_id"],
+    }
     await db.commit()
 
     return ChatHandoffResponse(
         success=True,
-        conversation_id=str(conversation.id),
-        business_id=str(call_session.business_id),
-        first_message=first_message
+        conversation_id=chat_result["conversation_id"],
+        business_id=business_id,
+        first_message=chat_result.get("first_message", "Welcome! Let's complete your booking."),
     )
 
+
+# ==================== GET CALL ====================
 
 @router.get("/calls/{call_id}")
 async def get_call(
@@ -281,7 +564,6 @@ async def get_call(
     call_service = CallSessionService(db)
 
     call = await call_service.get_call_by_public_id(call_id)
-
     if not call:
         try:
             result = await db.execute(
@@ -290,7 +572,7 @@ async def get_call(
             cs = result.scalar_one_or_none()
             if cs:
                 call = call_service._call_to_dict(cs)
-        except:
+        except Exception:
             pass
 
     if not call:
@@ -298,3 +580,35 @@ async def get_call(
 
     return call
 
+
+# ==================== HELPER ====================
+
+async def _end_call_session(
+    db: AsyncSession,
+    call_session_id: str,
+    status: str,
+    resolution_type: str,
+    outcome: str,
+):
+    """Update call session to ended state."""
+    if not call_session_id:
+        return
+
+    try:
+        result = await db.execute(
+            select(CallSession).where(CallSession.id == uuid_lib.UUID(call_session_id))
+        )
+        call_session = result.scalar_one_or_none()
+        if call_session:
+            call_session.status = status
+            call_session.resolution_type = resolution_type
+            call_session.outcome = outcome
+            call_session.ended_at = datetime.utcnow()
+
+            if call_session.started_at:
+                duration = (datetime.utcnow() - call_session.started_at.replace(tzinfo=None)).total_seconds()
+                call_session.duration_seconds = int(duration)
+
+            await db.commit()
+    except Exception:
+        pass
