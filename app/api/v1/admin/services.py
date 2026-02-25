@@ -28,15 +28,20 @@ class ServiceCreate(BaseModel):
     timezone: str = Field(..., min_length=1, max_length=64)
     open_time: str | None = "09:00"
     close_time: str | None = "18:00"
+    base_price: float | None = None
+    currency: str = "BDT"
+    duration_minutes: int = 60
 
 class ServiceUpdate(BaseModel):
-
     service_name: str | None = None
     description: str | None = None
     is_active: bool | None = None
     timezone: str | None = None
     open_time: str | None = None
     close_time: str | None = None
+    base_price: float | None = None
+    currency: str | None = None
+    duration_minutes: int | None = None
 
 
 class ServiceResponse(BaseModel):
@@ -49,6 +54,9 @@ class ServiceResponse(BaseModel):
     timezone: str
     open_time: str | None
     close_time: str | None
+    base_price: float | None
+    currency: str | None
+    duration_minutes: int | None
 
 
 # ============== Helpers ==============
@@ -80,8 +88,10 @@ def service_to_response(service: Service) -> ServiceResponse:
         timezone=service.timezone,
         open_time=format_time(service.open_time),
         close_time=format_time(service.close_time),
+        base_price=float(service.base_price) if service.base_price else None,
+        currency=service.currency,
+        duration_minutes=service.duration_minutes,
     )
-
 
 
 # ============== Service Endpoints ==============
@@ -117,9 +127,9 @@ async def create_service(
         slug=request.slug,
         service_name=request.service_name,
         description=request.description or "",
-        base_price=None,
-        currency="BDT",
-        duration_minutes=60,
+        base_price=request.base_price,
+        currency=request.currency,
+        duration_minutes=request.duration_minutes,
         is_active=True,
         open_time=parse_time(request.open_time),
         close_time=parse_time(request.close_time),
@@ -187,7 +197,12 @@ async def update_service(
         service.open_time = parse_time(request.open_time)
     if request.close_time is not None:
         service.close_time = parse_time(request.close_time)
-    
+    if request.base_price is not None:
+        service.base_price = request.base_price
+    if request.currency is not None:
+        service.currency = request.currency
+    if request.duration_minutes is not None:
+        service.duration_minutes = request.duration_minutes
 
     service.updated_at = datetime.utcnow()
     await db.commit()

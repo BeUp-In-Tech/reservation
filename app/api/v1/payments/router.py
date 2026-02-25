@@ -110,3 +110,20 @@ async def stripe_webhook(
         business_id=business_id,
         provider_event_id=event.get("id"),
     )
+@router.get("/payments/success")
+async def payment_success(session_id: str = None):
+    """Payment success redirect page."""
+    return {
+        "status": "success",
+        "message": "Payment completed successfully!",
+        "session_id": session_id
+    }
+
+
+@router.get("/payments/cancel")
+async def payment_cancel():
+    """Payment cancelled redirect page."""
+    return {
+        "status": "cancelled",
+        "message": "Payment was cancelled."
+    }
