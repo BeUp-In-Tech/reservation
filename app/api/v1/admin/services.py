@@ -29,7 +29,7 @@ class ServiceCreate(BaseModel):
     open_time: str | None = "09:00"
     close_time: str | None = "18:00"
     base_price: float | None = None
-    currency: str = "BDT"
+    currency: str = "USD"
     duration_minutes: int = 60
 
 class ServiceUpdate(BaseModel):
