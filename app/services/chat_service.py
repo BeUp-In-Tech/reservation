@@ -40,6 +40,7 @@ class ChatService:
         self,
         business_slug: str,
         service_id: str | None = None,
+        service_name: str | None = None,
         user_session_id: str | None = None,
         channel: str = "CHAT"
     ) -> dict:
@@ -54,6 +55,19 @@ class ChatService:
         business = result.scalar_one_or_none()
         if not business:
             raise ValueError(f"Business not found: {business_slug}")
+
+        # If service_name provided but not service_id, look up by name
+        if not service_id and service_name:
+            svc_result = await self.db.execute(
+                select(Service).where(
+                    Service.business_id == business.id,
+                    Service.service_name == service_name,
+                    Service.is_active == True
+                )
+            )
+            found_svc = svc_result.scalar_one_or_none()
+            if found_svc:
+                service_id = str(found_svc.id)
 
         # Validate service belongs to this business
         selected_service = None

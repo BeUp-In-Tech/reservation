@@ -23,6 +23,7 @@ class ChatMessageResponse(ChatMessageBase):
 class ConversationStart(BaseModel):
     business_slug: str = Field(..., min_length=1, max_length=120)
     service_id: str | None = Field(None, description="Service UUID to pre-select a service")
+    service_name: str | None = Field(None, description="Service name to pre-select a service")
     
     user_session_id: str | None = Field(None, max_length=120)
     channel: str | None = "CHAT"
