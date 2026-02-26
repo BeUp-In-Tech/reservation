@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+﻿from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
@@ -22,6 +22,8 @@ class ServicePublicResponse(BaseModel):
     timezone: str
     open_time: str | None
     close_time: str | None
+    base_price: float | None
+    currency: str | None
 
 
 class TimeSlotResponse(BaseModel):
@@ -152,6 +154,9 @@ async def get_services_public(
             timezone=s.timezone,
             open_time=s.open_time.strftime("%H:%M") if s.open_time else None,
             close_time=s.close_time.strftime("%H:%M") if s.close_time else None,
+            base_price=float(s.base_price) if s.base_price is not None else None,
+            currency=s.currency,
+
         )
         for s in services
     ]
