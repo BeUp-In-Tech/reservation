@@ -4,7 +4,7 @@ from sqlalchemy import select
 from pydantic import BaseModel
 from datetime import datetime, date, timedelta
 import uuid
-
+from app.models import PlatformSettings
 from app.core.database import get_db
 from app.models import Business, Service, Booking, BusinessOperatingHours
 
@@ -78,7 +78,36 @@ async def get_platform_name_public(
         platform_name=setting.value if setting else "AI Booking System",
     )
 
+# ============== ADD THIS TO app/api/v1/public/router.py ==============
+# Add at the end of the file, after existing endpoints.
+# This is the PUBLIC endpoint (no auth) that the frontend Contact Us page calls.
 
+class PlatformContactPublicResponse(BaseModel):
+    contact_phone: str | None = None
+    contact_email: str | None = None
+    contact_address: str | None = None
+
+
+@router.get("/platform-contact", response_model=PlatformContactPublicResponse)
+async def get_platform_contact_public(
+    db: AsyncSession = Depends(get_db),
+):
+    """Get platform contact info (public, no auth). For the Contact Us page."""
+    
+
+    result = await db.execute(
+        select(PlatformSettings).where(
+            PlatformSettings.key.in_(["contact_phone", "contact_email", "contact_address"])
+        )
+    )
+    settings = result.scalars().all()
+    data = {s.key: s.value for s in settings}
+
+    return PlatformContactPublicResponse(
+        contact_phone=data.get("contact_phone") or None,
+        contact_email=data.get("contact_email") or None,
+        contact_address=data.get("contact_address") or None,
+    )
 @router.get("/{business_slug}", response_model=BusinessPublicResponse)
 async def get_business_public(
     business_slug: str,
