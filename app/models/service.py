@@ -1,4 +1,4 @@
-﻿import uuid
+import uuid
 from datetime import datetime, time
 from decimal import Decimal
 from sqlalchemy import String, Text, Integer, Boolean, DateTime, ForeignKey, Numeric, Time
@@ -33,6 +33,7 @@ class Service(Base):
     is_popular: Mapped[bool] = mapped_column(Boolean, default=False)
     service_type: Mapped[str] = mapped_column(String(20), default="IN_PERSON")
     max_capacity: Mapped[int | None] = mapped_column(Integer, nullable=True, default=1)
+    allow_multiple_bookings: Mapped[bool] = mapped_column(Boolean, default=False)
     icon: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)

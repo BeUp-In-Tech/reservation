@@ -1,4 +1,4 @@
-﻿from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel, Field
@@ -31,6 +31,7 @@ class ServiceCreate(BaseModel):
     base_price: float | None = None
     currency: str = "USD"
     duration_minutes: int = 60
+    allow_multiple_bookings: bool = False
 
 class ServiceUpdate(BaseModel):
     service_name: str | None = None
@@ -42,6 +43,7 @@ class ServiceUpdate(BaseModel):
     base_price: float | None = None
     currency: str | None = None
     duration_minutes: int | None = None
+    allow_multiple_bookings: bool | None = None
 
 
 class ServiceResponse(BaseModel):
@@ -57,6 +59,7 @@ class ServiceResponse(BaseModel):
     base_price: float | None
     currency: str | None
     duration_minutes: int | None
+    allow_multiple_bookings: bool = False
 
 
 # ============== Helpers ==============
