@@ -133,6 +133,14 @@ class SlotService:
             True if slot is available, False if already booked
         """
         
+        # Check if service allows multiple bookings
+        svc_result = await self.db.execute(
+            select(Service).where(Service.id == uuid.UUID(service_id))
+        )
+        service = svc_result.scalar_one_or_none()
+        if service and service.allow_multiple_bookings:
+            return True
+
         # Find any existing booking for this service at this time
         # Exclude cancelled, failed, and expired bookings
         result = await self.db.execute(
