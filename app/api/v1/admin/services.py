@@ -94,6 +94,7 @@ def service_to_response(service: Service) -> ServiceResponse:
         base_price=float(service.base_price) if service.base_price else None,
         currency=service.currency,
         duration_minutes=service.duration_minutes,
+        allow_multiple_bookings=service.allow_multiple_bookings,
     )
 
 
@@ -133,6 +134,7 @@ async def create_service(
         base_price=request.base_price,
         currency=request.currency,
         duration_minutes=request.duration_minutes,
+        allow_multiple_bookings=request.allow_multiple_bookings,
         is_active=True,
         open_time=parse_time(request.open_time),
         close_time=parse_time(request.close_time),
@@ -206,6 +208,8 @@ async def update_service(
         service.currency = request.currency
     if request.duration_minutes is not None:
         service.duration_minutes = request.duration_minutes
+    if request.allow_multiple_bookings is not None:
+        service.allow_multiple_bookings = request.allow_multiple_bookings
 
     service.updated_at = datetime.utcnow()
     await db.commit()
