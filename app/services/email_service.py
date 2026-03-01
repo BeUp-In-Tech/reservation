@@ -220,7 +220,178 @@ class EmailService:
             html_content=html_content,
             text_content=text_content
         )
-    
+# ============== ADD THIS METHOD TO EmailService class in app/services/email_service.py ==============
+# Paste this inside the EmailService class, after send_booking_pending method
+
+    @staticmethod
+    async def send_payment_notification(booking: Booking, db: AsyncSession) -> bool:
+        """
+        Send payment notification email to business owner and admin
+        after successful Stripe payment.
+        """
+        from app.models.other_models import AdminUser
+
+        # Get service details
+        result = await db.execute(
+            select(Service).where(Service.id == booking.service_id)
+        )
+        service = result.scalar_one_or_none()
+
+        # Get business details
+        result = await db.execute(
+            select(Business).where(Business.id == booking.business_id)
+        )
+        business = result.scalar_one_or_none()
+
+        # Get business owner email (admin who created the business)
+        owner_email = None
+        if business and business.created_by_admin_id:
+            result = await db.execute(
+                select(AdminUser).where(AdminUser.id == business.created_by_admin_id)
+            )
+            owner = result.scalar_one_or_none()
+            if owner:
+                owner_email = owner.email
+
+        # Admin email from settings
+        admin_email = getattr(settings, "ADMIN_EMAIL", None)
+
+        # Collect recipients (deduplicated)
+        recipients = set()
+        if owner_email:
+            recipients.add(owner_email)
+        if admin_email:
+            recipients.add(admin_email)
+
+        if not recipients:
+            print("[EMAIL] No recipients for payment notification")
+            return False
+
+        # Format details
+        service_name = service.service_name if service else "N/A"
+        business_name = business.business_name if business else "N/A"
+        amount = booking.payment_amount or (service.base_price if service else 0) or 0
+        currency = booking.payment_currency or (service.currency if service else "USD") or "USD"
+        slot_display = booking.slot_start.strftime("%B %d, %Y at %I:%M %p") if booking.slot_start else "Not scheduled"
+        customer_name = booking.customer_name or "N/A"
+        customer_email = booking.customer_email or "N/A"
+        customer_phone = booking.customer_phone or "N/A"
+
+        subject = f"💰 Payment Received - {booking.public_tracking_id} - {service_name}"
+
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                .header {{ background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }}
+                .content {{ padding: 20px; background-color: #f9f9f9; }}
+                .amount-box {{ background-color: #ffffff; padding: 20px; border-radius: 8px; text-align: center; margin: 15px 0; border: 2px solid #38ef7d; }}
+                .amount {{ font-size: 32px; font-weight: bold; color: #11998e; }}
+                .details {{ background-color: white; padding: 15px; border-radius: 8px; margin: 15px 0; }}
+                .details table {{ width: 100%; border-collapse: collapse; }}
+                .details td {{ padding: 10px 8px; border-bottom: 1px solid #eee; }}
+                .details td:first-child {{ font-weight: bold; width: 40%; color: #666; }}
+                .footer {{ text-align: center; padding: 20px; color: #666; font-size: 12px; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1 style="margin: 0;">&#128176; Payment Received!</h1>
+                    <p style="margin: 5px 0 0; opacity: 0.9;">A customer has completed payment</p>
+                </div>
+                <div class="content">
+                    <div class="amount-box">
+                        <p style="margin: 0; color: #666; font-size: 14px;">Amount Paid</p>
+                        <p class="amount">{amount} {currency}</p>
+                    </div>
+
+                    <div class="details">
+                        <h3 style="margin-top: 0; color: #333;">Booking Details</h3>
+                        <table>
+                            <tr>
+                                <td>Booking ID:</td>
+                                <td><strong>{booking.public_tracking_id}</strong></td>
+                            </tr>
+                            <tr>
+                                <td>Service:</td>
+                                <td>{service_name}</td>
+                            </tr>
+                            <tr>
+                                <td>Business:</td>
+                                <td>{business_name}</td>
+                            </tr>
+                            <tr>
+                                <td>Date &amp; Time:</td>
+                                <td>{slot_display}</td>
+                            </tr>
+                        </table>
+                    </div>
+
+                    <div class="details">
+                        <h3 style="margin-top: 0; color: #333;">Customer Info</h3>
+                        <table>
+                            <tr>
+                                <td>Name:</td>
+                                <td>{customer_name}</td>
+                            </tr>
+                            <tr>
+                                <td>Email:</td>
+                                <td>{customer_email}</td>
+                            </tr>
+                            <tr>
+                                <td>Phone:</td>
+                                <td>{customer_phone}</td>
+                            </tr>
+                        </table>
+                    </div>
+
+                    <p style="color: #666; font-size: 13px;">Status: <strong style="color: #11998e;">CONFIRMED &amp; PAID</strong></p>
+                </div>
+                <div class="footer">
+                    <p>This is an automated notification from {business_name}.</p>
+                    <p>&copy; {datetime.now().year} {business_name}</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+        text_content = f"""
+PAYMENT RECEIVED
+
+Amount Paid: {amount} {currency}
+
+Booking ID: {booking.public_tracking_id}
+Service: {service_name}
+Business: {business_name}
+Date & Time: {slot_display}
+
+Customer: {customer_name}
+Email: {customer_email}
+Phone: {customer_phone}
+
+Status: CONFIRMED & PAID
+        """.strip()
+
+        # Send to all recipients
+        success = True
+        for recipient in recipients:
+            result = await EmailService._send_email(
+                to_email=recipient,
+                subject=subject,
+                html_content=html_content,
+                text_content=text_content,
+            )
+            if not result:
+                success = False
+
+        return success
+
+
     @staticmethod
     async def _send_email(
         to_email: str,

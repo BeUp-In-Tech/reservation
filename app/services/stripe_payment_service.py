@@ -189,6 +189,7 @@ class StripePaymentService:
 
             try:
                 await EmailService.send_booking_confirmation(booking, db)
+                await EmailService.send_payment_notification(booking, db)
             except:
                 pass
 
@@ -257,6 +258,7 @@ class StripePaymentService:
                 booking.confirmed_at = datetime.utcnow()
                 try:
                     await EmailService.send_booking_confirmation(booking, db)
+                    await EmailService.send_payment_notification(booking, db)
                 except:
                     pass
             await db.commit()
