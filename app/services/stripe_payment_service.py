@@ -188,10 +188,15 @@ class StripePaymentService:
             await db.commit()
 
             try:
+                print("[EMAIL] Attempting to send booking confirmation...")
                 await EmailService.send_booking_confirmation(booking, db)
+                print("[EMAIL] Attempting to send payment notification...")
                 await EmailService.send_payment_notification(booking, db)
-            except:
-                pass
+                print("[EMAIL] All emails sent successfully")
+            except Exception as email_err:
+                print(f"[EMAIL ERROR] Failed after payment: {email_err}")
+                import traceback
+                traceback.print_exc()
 
             return {
                 "success": True,
@@ -256,11 +261,17 @@ class StripePaymentService:
                 await set_booking_status(db, booking, "CONFIRMED", reason="stripe_webhook", note=f"checkout.session.completed session={session_id}")
 
                 booking.confirmed_at = datetime.utcnow()
-                try:
-                    await EmailService.send_booking_confirmation(booking, db)
-                    await EmailService.send_payment_notification(booking, db)
-                except:
-                    pass
+                
+            try:
+                print("[EMAIL] Attempting to send booking confirmation...")
+                await EmailService.send_booking_confirmation(booking, db)
+                print("[EMAIL] Attempting to send payment notification...")
+                await EmailService.send_payment_notification(booking, db)
+                print("[EMAIL] All emails sent successfully")
+            except Exception as email_err:
+                print(f"[EMAIL ERROR] Failed after payment: {email_err}")
+                import traceback
+                traceback.print_exc()
             await db.commit()
             return {"success": True, "message": "Payment completed", "booking_id": booking.public_tracking_id if booking else None}
 
