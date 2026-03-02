@@ -239,8 +239,8 @@ Or use your Booking ID to pay later.
 
         service_name = service.service_name if service else "N/A"
         business_name = business.business_name if business else "N/A"
-        amount = booking.payment_amount or (service.base_price if service else 0) or 0
-        currency = booking.payment_currency or (service.currency if service else "USD") or "USD"
+        amount = service.base_price if service else 0
+        currency = (service.currency if service else "USD") or "USD"
         slot_display = booking.slot_start.strftime("%B %d, %Y at %I:%M %p") if booking.slot_start else "Not scheduled"
         customer_name = booking.customer_name or "N/A"
         customer_email_addr = booking.customer_email or "N/A"
