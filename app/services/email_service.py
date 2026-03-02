@@ -213,15 +213,8 @@ Or use your Booking ID to pay later.
         result = await db.execute(select(Business).where(Business.id == booking.business_id))
         business = result.scalar_one_or_none()
 
-        # Get business owner email
-        owner_email = None
-        if business and business.created_by_admin_id:
-            result = await db.execute(
-                select(AdminUser).where(AdminUser.id == business.created_by_admin_id)
-            )
-            owner = result.scalar_one_or_none()
-            if owner:
-                owner_email = owner.email
+        # Get business owner email (from business.email field)
+        owner_email = business.email if business else None
 
         # Admin email from settings
         admin_email = getattr(settings, "ADMIN_EMAIL", None)
