@@ -67,7 +67,7 @@ class VoiceFlowService:
         if svc["base_price"]:
             parts.append(f"The price is {svc['base_price']} {svc['currency']}.")
 
-        if svc["duration_minutes"]:
+        if svc["duration_minutes"] and svc["duration_minutes"] > 0:
             hours = svc["duration_minutes"] // 60
             mins = svc["duration_minutes"] % 60
             if hours and mins:
