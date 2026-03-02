@@ -1,4 +1,4 @@
-﻿from datetime import datetime
+from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.core.email import send_email
@@ -71,7 +71,7 @@ class EmailService:
                             </tr>
                             <tr>
                                 <td>Amount Paid:</td>
-                                <td>{booking.payment_amount or 0} {booking.payment_currency or 'USD'}</td>
+                                <td>{service.base_price or 0} {service.currency or 'USD'}</td>
                             </tr>
                             <tr>
                                 <td>Status:</td>
@@ -105,7 +105,7 @@ Booking ID: {booking.public_tracking_id}
 Service: {service.service_name if service else 'N/A'}
 Date & Time: {slot_display}
 Business: {business.business_name if business else 'N/A'}
-Amount Paid: {booking.payment_amount or 0} {booking.payment_currency or 'USD'}
+Amount Paid: {service.base_price or 0} {service.currency or 'USD'}
 Status: CONFIRMED
 
 Thank you for choosing us!
