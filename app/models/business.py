@@ -42,7 +42,7 @@ class Business(Base):
     country: Mapped[str | None] = mapped_column(String(100), nullable=True)
     default_currency: Mapped[str] = mapped_column(String(3), default="BDT")
     is_active: Mapped[bool] = mapped_column(Boolean, default=False)
-
+    logo_url: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_by_admin_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("core.admin_users.id"), nullable=True

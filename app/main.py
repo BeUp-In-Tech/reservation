@@ -1,7 +1,7 @@
 ﻿from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-
+from app.api.v1.admin.images import router as images_router
 from app.api.v1.chat.router import router as chat_router
 from app.api.v1.voice.router import router as voice_router
 from app.api.v1.voice.ws_test import ws_router as voice_ws_router
@@ -59,6 +59,7 @@ app.include_router(admin_dashboard_router, prefix="/api/v1/admin", tags=["Admin 
 app.include_router(admin_bookings_router, prefix="/api/v1/admin", tags=["Admin Bookings"])
 app.include_router(admin_platform_router, prefix="/api/v1/admin", tags=["Admin Platform"])
 app.include_router(contact_router, prefix="/api/v1", tags=["Contact"])
+app.include_router(images_router, prefix="/api/v1/admin/businesses", tags=["Images"])
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}

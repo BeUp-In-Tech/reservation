@@ -7,7 +7,7 @@ import uuid
 from app.models import PlatformSettings
 from app.core.database import get_db
 from app.models import Business, Service, Booking, BusinessOperatingHours
-
+from app.models.other_models import ServiceImage
 
 router = APIRouter()
 
@@ -108,6 +108,67 @@ async def get_platform_contact_public(
         contact_email=data.get("contact_email") or None,
         contact_address=data.get("contact_address") or None,
     )
+
+# ============== ADD TO app/api/v1/public/router.py ==============
+# Add ABOVE the /{business_slug} route (same as platform-contact)
+# Also add ServiceImage to imports: from app.models.other_models import ServiceImage
+
+class ServiceImagePublicResponse(BaseModel):
+    id: str
+    url: str
+    alt_text: str | None = None
+
+
+@router.get("/{business_slug}/logo")
+async def get_business_logo_public(
+    business_slug: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get business logo (public)."""
+    result = await db.execute(
+        select(Business).where(Business.slug == business_slug, Business.is_active == True)
+    )
+    business = result.scalar_one_or_none()
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    return {"logo_url": business.logo_url}
+
+
+@router.get("/{business_slug}/services/{service_id}/images", response_model=list[ServiceImagePublicResponse])
+async def get_service_images_public(
+    business_slug: str,
+    service_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get service images (public)."""
+    result = await db.execute(
+        select(Business).where(Business.slug == business_slug, Business.is_active == True)
+    )
+    business = result.scalar_one_or_none()
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    result = await db.execute(
+        select(ServiceImage).where(
+            ServiceImage.service_id == uuid.UUID(service_id),
+            ServiceImage.business_id == business.id,
+        ).order_by(ServiceImage.sort_order)
+    )
+    images = result.scalars().all()
+
+    return [
+        ServiceImagePublicResponse(
+            id=str(img.id),
+            url=img.image_url,
+            alt_text=img.alt_text,
+        )
+        for img in images
+    ]
+
+
+
+
 @router.get("/{business_slug}", response_model=BusinessPublicResponse)
 async def get_business_public(
     business_slug: str,

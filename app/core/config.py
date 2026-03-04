@@ -38,7 +38,10 @@ class Settings(BaseSettings):
     TWILIO_PHONE_NUMBER: str = ""
     BASE_URL: str = ""  # Your server's public URL (e.g., https://your-app.onrender.com)
 
-
+    # Cloudinary
+    CLOUDINARY_CLOUD_NAME: str = ""
+    CLOUDINARY_API_KEY: str = ""
+    CLOUDINARY_API_SECRET: str = ""
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
