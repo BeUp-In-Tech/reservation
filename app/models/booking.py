@@ -62,3 +62,4 @@ class Booking(Base):
     payment_sessions = relationship("PaymentSession", back_populates="booking")
     status_history = relationship("BookingStatusHistory", back_populates="booking")
     handoff_requests = relationship("HandoffRequest", back_populates="booking")
+    review = relationship("Review", back_populates="booking", uselist=False)

@@ -8,6 +8,8 @@ from app.models import PlatformSettings
 from app.core.database import get_db
 from app.models import Business, Service, Booking, BusinessOperatingHours
 from app.models.other_models import ServiceImage
+from app.models.review import Review
+from app.services.review_service import check_review_eligibility
 
 router = APIRouter()
 
@@ -47,6 +49,9 @@ class BookingPublicResponse(BaseModel):
     slot_end: str | None
     customer_name: str | None
     created_at: str | None
+    can_review: bool = False
+    review_expires_at: str | None = None
+    review_hours_remaining: float | None = None
 
 class BusinessPublicResponse(BaseModel):
     id: str
@@ -428,47 +433,55 @@ async def get_my_bookings(
     email: str | None = Query(None, description="Email address"),
     db: AsyncSession = Depends(get_db)
 ):
-    """Get all bookings for a customer by phone or email."""
-    
+    """Get all bookings for a customer by phone or email, with review eligibility."""
+
     if not phone and not email:
         raise HTTPException(status_code=400, detail="Phone or email is required")
-    
+
     query = select(Booking)
-    
+
     if phone:
         query = query.where(Booking.customer_phone == phone)
     elif email:
         query = query.where(Booking.customer_email == email)
-    
+
     query = query.order_by(Booking.created_at.desc())
-    
+
     result = await db.execute(query)
     bookings = result.scalars().all()
-    
+
     # Get service names
     service_ids = [b.service_id for b in bookings if b.service_id]
     services_dict = {}
-    
+
     if service_ids:
         result = await db.execute(
             select(Service).where(Service.id.in_(service_ids))
         )
         services = result.scalars().all()
         services_dict = {s.id: s.service_name for s in services}
-    
-    return [
-        BookingPublicResponse(
-            tracking_id=b.public_tracking_id,
-            status=b.status,
-            service_name=services_dict.get(b.service_id, "Unknown"),
-            slot_start=b.slot_start.isoformat() if b.slot_start else None,
-            slot_end=b.slot_end.isoformat() if b.slot_end else None,
-            customer_name=b.customer_name,
-            created_at=b.created_at.isoformat() if b.created_at else None
-        )
-        for b in bookings
-    ]
 
+    # Build response with review eligibility
+    responses = []
+    for b in bookings:
+        eligibility = await check_review_eligibility(db, b)
+
+        responses.append(
+            BookingPublicResponse(
+                tracking_id=b.public_tracking_id,
+                status=b.status,
+                service_name=services_dict.get(b.service_id, "Unknown"),
+                slot_start=b.slot_start.isoformat() if b.slot_start else None,
+                slot_end=b.slot_end.isoformat() if b.slot_end else None,
+                customer_name=b.customer_name,
+                created_at=b.created_at.isoformat() if b.created_at else None,
+                can_review=eligibility["can_review"],
+                review_expires_at=eligibility["expires_at"],
+                review_hours_remaining=eligibility["hours_remaining"],
+            )
+        )
+
+    return responses
 
 @router.get("/{business_slug}/categories", response_model=list[str])
 async def get_service_categories(

@@ -238,7 +238,7 @@ async def change_password(
     # Verify current password
     if not verify_password(request.current_password, current_admin.password_hash):
         raise HTTPException(status_code=400, detail="Current password is incorrect")
-    
+     
     # Validate new password
     if request.new_password != request.confirm_password:
         raise HTTPException(status_code=400, detail="New passwords do not match")

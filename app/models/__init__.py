@@ -10,6 +10,7 @@ from app.models.booking import Booking
 from app.models.conversation import Conversation
 from app.models.conversation_message import ConversationMessage
 from app.models.call_session import CallSession
+from app.models.review import Review
 
 
 from .service_contact import ServiceContact
@@ -49,5 +50,6 @@ __all__ = [
     "BusinessAddress",
     "BusinessProfile",
     "PlatformSettings",
+    "Review"
 
 ]
