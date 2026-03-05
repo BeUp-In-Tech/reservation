@@ -61,6 +61,8 @@ class BusinessPublicResponse(BaseModel):
     description: str | None
     phone: str | None
     email: str | None
+    logo_url: str | None = None  # ADD THIS
+
     
 
 # ============== Endpoints ==============
@@ -196,6 +198,8 @@ async def get_business_public(
         description=business.description,
         phone=business.phone,
         email=business.email,
+        logo_url=business.logo_url,  # ADD THIS
+
         
     )
 
@@ -527,6 +531,8 @@ async def list_all_businesses_public(
             description=b.description,
             phone=b.phone,
             email=b.email,
+            logo_url=b.logo_url,  # ADD THIS
+
         )
         for b in businesses
     ]
