@@ -68,6 +68,7 @@ class BusinessResponse(BaseModel):
     timezone: str
     status: str | None
     created_at: str | None
+    logo_url: str | None = None
 
 
 class BusinessProfileResponse(BaseModel):

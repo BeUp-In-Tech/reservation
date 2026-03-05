@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+﻿from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from pydantic import BaseModel, Field
@@ -18,8 +18,6 @@ router = APIRouter()
 
 
 # ============== Models ==============
-# (delete these lines entirely)
-
 
 
 class BusinessCreate(BaseModel):
@@ -56,6 +54,7 @@ class BusinessUpdate(BaseModel):
     add_services: list[ServiceInput] | None = None
     delete_service_ids: list[str] | None = None
 
+
 class BusinessResponse(BaseModel):
     id: str
     business_name: str
@@ -69,6 +68,7 @@ class BusinessResponse(BaseModel):
     city: str | None = None
     state: str | None = None
     zip_code: str | None = None
+    logo_url: str | None = None
 
 
 class DeleteResponse(BaseModel):
@@ -148,6 +148,7 @@ async def list_businesses(
             city=b.city,
             state=b.state,
             zip_code=b.zip_code,
+            logo_url=b.logo_url,
         ))
     return responses
 
@@ -164,9 +165,6 @@ async def create_business(
     result = await db.execute(select(Business).where(Business.slug == request.slug))
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Slug already exists")
-
-    # Validate hours
-    # (delete these lines entirely)
 
     # Create business
     business = Business(
@@ -193,7 +191,6 @@ async def create_business(
     db.add(business)
     await db.flush()
 
-    # Create operating hours
     # Create default operating hours (Mon-Fri 9-18, Sat-Sun closed)
     for day in range(7):
         is_closed = day in [5, 6]  # Saturday, Sunday
@@ -233,6 +230,7 @@ async def create_business(
         city=business.city,
         state=business.state,
         zip_code=business.zip_code,
+        logo_url=business.logo_url,
     )
 
 
@@ -258,6 +256,7 @@ async def get_business(
         city=business.city,
         state=business.state,
         zip_code=business.zip_code,
+        logo_url=business.logo_url,
     )
 
 
@@ -352,7 +351,9 @@ async def update_business(
         city=business.city,
         state=business.state,
         zip_code=business.zip_code,
+        logo_url=business.logo_url,
     )
+
 
 @router.delete("/{business_id}", response_model=DeleteResponse)
 async def delete_business(
@@ -415,9 +416,9 @@ async def delete_business(
         conversation_ids = [row[0] for row in conversations_result.fetchall()]
         if conversation_ids:
             await db.execute(
-        text("DELETE FROM core.conversation_messages WHERE conversation_id = ANY(:ids)"),
-        {"ids": conversation_ids},
-    )
+                text("DELETE FROM core.conversation_messages WHERE conversation_id = ANY(:ids)"),
+                {"ids": conversation_ids},
+            )
 
         # 9. Delete conversations
         await db.execute(delete(Conversation).where(Conversation.business_id == bid))
@@ -437,9 +438,9 @@ async def delete_business(
         reg = await db.execute(text("SELECT to_regclass('core.admin_business_access')"))
         if reg.scalar() is not None:
             await db.execute(
-        text("DELETE FROM core.admin_business_access WHERE business_id = :bid"),
-        {"bid": str(bid)},
-    )
+                text("DELETE FROM core.admin_business_access WHERE business_id = :bid"),
+                {"bid": str(bid)},
+            )
 
         # 15. Delete profiles
         await db.execute(text("DELETE FROM core.business_profiles WHERE business_id = :bid"), {"bid": str(bid)})

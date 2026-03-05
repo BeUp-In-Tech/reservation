@@ -31,6 +31,7 @@ class BusinessResponse(BusinessBase):
     id: UUID
     slug: str
     status: str
+    logo_url: str | None = None  # ADD THIS
     created_at: datetime
     updated_at: datetime
 
