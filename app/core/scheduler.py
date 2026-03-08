@@ -23,7 +23,6 @@ async def run_review_reminder_check():
 
 def start_scheduler():
     """Start the background scheduler"""
-    # Existing: expire unpaid bookings every hour
     scheduler.add_job(
         run_booking_expiry_check,
         CronTrigger(minute=0),
@@ -31,8 +30,6 @@ def start_scheduler():
         name="Expire unpaid bookings after 24 hours",
         replace_existing=True
     )
-
-    # NEW: send review reminders every hour (at minute 30 to stagger)
     scheduler.add_job(
         run_review_reminder_check,
         CronTrigger(minute=30),

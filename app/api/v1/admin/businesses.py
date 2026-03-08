@@ -366,6 +366,7 @@ async def delete_business(
     Frontend should show "Are you sure?" popup before calling this.
     """
     from app.models import Booking, Conversation, Service, CallSession
+    from app.models.review import Review
     from app.models.other_models import (
         BusinessOperatingHours,
         BusinessAISettings,
@@ -397,8 +398,9 @@ async def delete_business(
         bookings_result = await db.execute(select(Booking.id).where(Booking.business_id == bid))
         booking_ids = [row[0] for row in bookings_result.fetchall()]
 
-        # 4. Delete booking-related
+        # 4. Delete booking-related (order matters: reviews → status history → payments)
         if booking_ids:
+            await db.execute(delete(Review).where(Review.booking_id.in_(booking_ids)))
             await db.execute(delete(BookingStatusHistory).where(BookingStatusHistory.booking_id.in_(booking_ids)))
             await db.execute(delete(PaymentSession).where(PaymentSession.booking_id.in_(booking_ids)))
 
@@ -435,6 +437,7 @@ async def delete_business(
         # 13. Delete availability exceptions
         await db.execute(delete(BusinessAvailabilityException).where(BusinessAvailabilityException.business_id == bid))
 
+        # 14. Delete admin business access (if table exists)
         reg = await db.execute(text("SELECT to_regclass('core.admin_business_access')"))
         if reg.scalar() is not None:
             await db.execute(
@@ -448,7 +451,10 @@ async def delete_business(
         # 16. Delete addresses
         await db.execute(text("DELETE FROM core.business_addresses WHERE business_id = :bid"), {"bid": str(bid)})
 
-        # 17. Delete business (services & service_contacts cascade)
+        # 17. Delete reviews that reference this business directly (safety net)
+        await db.execute(delete(Review).where(Review.business_id == bid))
+
+        # 18. Delete business (services & service_contacts cascade)
         await db.delete(business)
 
         await db.commit()
