@@ -1,4 +1,4 @@
-"""
+﻿"""
 Rule-based chat service for the booking system.
 No AI/LLM calls - uses regex parsing and database lookups.
 """
@@ -261,6 +261,7 @@ class ChatService:
             latest_booking=latest_booking,
             existing_handoff=existing_handoff,
             current_step=current_step,
+            user_message=user_message,
         )
 
         ai_response = response_data.get("response", "I didn't understand that. Could you rephrase?")
@@ -721,8 +722,17 @@ class ChatService:
             return {"response": f"I didn't quite understand. Please select a service: {svc_names}"}
 
         elif current_step == "awaiting_slot":
-            return {"response": "I didn't understand that. Please provide a date and time for your booking.\n(e.g., \"tomorrow 3pm\", \"next Monday 10am\")"}
+            user_text = (kw.get("user_message") or "").lower().strip()
+            thanks_phrases = ["thank", "thanks", "thx", "ty", "appreciate", "ok", "okay", "got it", "alright"]
+            cancel_phrases = ["cancel", "never mind", "nevermind", "forget it", "stop", "bye", "goodbye", "not now"]
 
+            if any(p in user_text for p in thanks_phrases):
+                return {"response": "You're welcome! Let me know a date and time whenever you're ready — for example, \"tomorrow 3pm\" or \"Friday 10am\"."}
+
+            if any(p in user_text for p in cancel_phrases):
+                return {"response": "No problem, I've paused the booking. Just let me know when you'd like to pick it up again, or type **\"human\"** if you need to talk to someone."}
+
+            return {"response": "I didn't catch a date and time in that. Could you try something like \"tomorrow 3pm\" or \"next Monday 10am\"?"}
         elif current_step == "awaiting_contact":
             return {"response": "I need your contact information to proceed. Please provide your name, phone number, and email address."}
 
