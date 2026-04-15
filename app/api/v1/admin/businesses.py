@@ -6,7 +6,7 @@ from datetime import datetime, time
 from sqlalchemy import delete as sa_delete
 from typing import List
 import uuid
-
+from app.services.embedding_service import sync_business_embeddings, sync_service_embeddings
 from app.core.database import get_db
 from app.models.business import Business
 from app.models.service import Service
@@ -216,7 +216,10 @@ async def create_business(
 
     await db.commit()
     await db.refresh(business)
-
+    try:
+        await sync_business_embeddings(db, business)
+    except Exception as e:
+        print(f"[embeddings] business sync failed: {e}")
     return BusinessResponse(
         id=str(business.id),
         business_name=business.business_name,
@@ -337,7 +340,22 @@ async def update_business(
 
     await db.commit()
     await db.refresh(business)
+    try:
+        await sync_business_embeddings(db, business)
+    except Exception as e:
+        print(f"[embeddings] business sync failed: {e}")
 
+    # Auto-sync embeddings for newly added services
+    if request.add_services:
+        from sqlalchemy import select as sa_select
+        result = await db.execute(
+            sa_select(Service).where(Service.business_id == business.id)
+        )
+        for svc in result.scalars().all():
+            try:
+                await sync_service_embeddings(db, svc)
+            except Exception as e:
+                print(f"[embeddings] service sync failed: {e}")
     return BusinessResponse(
         id=str(business.id),
         business_name=business.business_name,
