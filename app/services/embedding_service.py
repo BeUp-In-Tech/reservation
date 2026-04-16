@@ -14,65 +14,117 @@ from app.models.embedding import Embedding
 from app.models.business import Business
 from app.models.service import Service
 
-_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+
 
 EMBEDDING_MODEL = "text-embedding-3-small"  # 1536 dims, cheap
 
 
-async def create_embedding(text: str) -> list[float]:
+async def _get_openai_client(db=None):
+    """Get an OpenAI client using the key from DB (falls back to env)."""
+    if db is not None:
+        from app.services.settings_service import get_setting
+        api_key = await get_setting(db, "openai_api_key")
+    else:
+        api_key = settings.OPENAI_API_KEY
+    return AsyncOpenAI(api_key=api_key)
+
+
+async def create_embedding(text: str, db=None) -> list[float]:
     """Call OpenAI and return a 1536-dim vector for the given text."""
     if not text or not text.strip():
         return None
-    response = await _client.embeddings.create(
+    client = await _get_openai_client(db)
+    response = await client.embeddings.create(
         model=EMBEDDING_MODEL,
         input=text.strip(),
     )
     return response.data[0].embedding
-
-
-def _build_business_chunks(business: Business) -> list[str]:
-    """Break a business into searchable text chunks."""
+def _build_business_chunks(business) -> list[str]:
+    """Break a business into searchable text chunks (excluding images/logos/website URLs)."""
     chunks = []
+
     if business.business_name:
         chunks.append(f"Business name: {business.business_name}")
     if business.description:
         chunks.append(f"About the business: {business.description}")
+
     industry = getattr(business, "industry_label", None)
     if industry:
         chunks.append(f"Industry: {industry}")
-    location_parts = [p for p in [business.street_address, business.city, business.state, business.zip_code, business.country] if p]
+
+    # Location
+    location_parts = [p for p in [
+        getattr(business, "street_address", None),
+        getattr(business, "city", None),
+        getattr(business, "state", None),
+        getattr(business, "zip_code", None),
+        getattr(business, "country", None),
+    ] if p]
     if location_parts:
         chunks.append(f"Location: {', '.join(location_parts)}")
+
+    if getattr(business, "address", None):
+        chunks.append(f"Address: {business.address}")
+
+    # Contact (excluding website)
     contact_parts = []
-    if business.phone:
+    if getattr(business, "contact_person", None):
+        contact_parts.append(f"contact person {business.contact_person}")
+    if getattr(business, "phone", None):
         contact_parts.append(f"phone {business.phone}")
-    if business.email:
+    if getattr(business, "email", None):
         contact_parts.append(f"email {business.email}")
-    if business.website:
-        contact_parts.append(f"website {business.website}")
     if contact_parts:
         chunks.append(f"Contact: {', '.join(contact_parts)}")
+
+    # Operating info
+    if getattr(business, "timezone", None):
+        chunks.append(f"Timezone: {business.timezone}")
+    if getattr(business, "default_currency", None):
+        chunks.append(f"Currency: {business.default_currency}")
+    if getattr(business, "service_name", None):
+        chunks.append(f"Main service offered: {business.service_name}")
+    if getattr(business, "status", None):
+        chunks.append(f"Status: {business.status}")
+
     return chunks
 
 
-def _build_service_chunks(service: Service, business_name: str = "") -> list[str]:
-    """Break a service into searchable text chunks."""
+def _build_service_chunks(service, business_name: str = "") -> list[str]:
+    """Break a service into searchable text chunks (excluding images)."""
     chunks = []
     prefix = f"{business_name} - " if business_name else ""
+
     if service.service_name:
         chunks.append(f"{prefix}Service offered: {service.service_name}")
     if service.description:
         chunks.append(f"{prefix}{service.service_name} details: {service.description}")
+
     if service.base_price is not None:
         currency = service.currency or ""
         chunks.append(f"{prefix}{service.service_name} price: {service.base_price} {currency}".strip())
     if service.duration_minutes:
         chunks.append(f"{prefix}{service.service_name} duration: {service.duration_minutes} minutes")
+
+    if getattr(service, "category", None):
+        chunks.append(f"{prefix}{service.service_name} category: {service.category}")
+    if getattr(service, "service_type", None):
+        chunks.append(f"{prefix}{service.service_name} type: {service.service_type}")
     if getattr(service, "location", None):
         chunks.append(f"{prefix}{service.service_name} location: {service.location}")
+
+    if getattr(service, "max_capacity", None):
+        chunks.append(f"{prefix}{service.service_name} max capacity: {service.max_capacity}")
+
+    open_time = getattr(service, "open_time", None)
+    close_time = getattr(service, "close_time", None)
+    if open_time and close_time:
+        chunks.append(f"{prefix}{service.service_name} hours: {open_time} to {close_time}")
+
+    if getattr(service, "is_popular", False):
+        chunks.append(f"{prefix}{service.service_name} is a popular service")
+
     return chunks
-
-
 async def sync_business_embeddings(db: AsyncSession, business: Business) -> int:
     """Delete old embeddings for a business and generate fresh ones."""
     # Remove existing business-level embeddings

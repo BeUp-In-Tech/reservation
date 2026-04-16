@@ -3,7 +3,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel, Field
 from datetime import datetime, time
-
+from app.services.embedding_service import sync_service_embeddings
+from sqlalchemy import delete as sa_delete_stmt
+from app.models.embedding import Embedding
 import uuid
 
 from app.core.database import get_db
@@ -149,6 +151,13 @@ async def create_service(
     await db.commit()
     await db.refresh(service)
 
+    # Auto-sync embeddings
+    try:
+        await sync_service_embeddings(db, service)
+    except Exception as e:
+        print(f"[embeddings] service sync failed: {e}")
+        await db.rollback()
+
     return service_to_response(service)
 
 
@@ -215,6 +224,13 @@ async def update_service(
     await db.commit()
     await db.refresh(service)
 
+    # Auto-sync embeddings
+    try:
+        await sync_service_embeddings(db, service)
+    except Exception as e:
+        print(f"[embeddings] service sync failed: {e}")
+        await db.rollback()
+
     return service_to_response(service)
 
 
@@ -243,6 +259,16 @@ async def delete_service(
         raise HTTPException(status_code=404, detail="Service not found")
 
     await db.delete(service)
-    await db.commit()
+# Delete embeddings for this service before commit
+    try:
+        await db.execute(
+            sa_delete_stmt(Embedding).where(
+                Embedding.source_type == "service",
+                Embedding.source_id == service.id,
+            )
+        )
+    except Exception as e:
+        print(f"[embeddings] service embedding delete failed: {e}")
 
+    await db.commit()
     return {"message": "Service deleted permanently"}

@@ -17,7 +17,7 @@ from app.api.v1.admin.platform import router as admin_platform_router
 from app.core.scheduler import start_scheduler, stop_scheduler
 from app.api.v1.contact.router import router as contact_router
 from app.api.v1.public.reviews import router as reviews_router
-
+from app.api.v1.admin.settings import router as admin_settings_router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown events"""
@@ -63,7 +63,7 @@ app.include_router(admin_platform_router, prefix="/api/v1/admin", tags=["Admin P
 app.include_router(contact_router, prefix="/api/v1", tags=["Contact"])
 app.include_router(images_router, prefix="/api/v1/admin/businesses", tags=["Images"])
 app.include_router(reviews_router, prefix="/api/v1/public", tags=["Reviews"])
-
+app.include_router(admin_settings_router)
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
