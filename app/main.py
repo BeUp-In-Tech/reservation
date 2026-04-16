@@ -18,6 +18,12 @@ from app.core.scheduler import start_scheduler, stop_scheduler
 from app.api.v1.contact.router import router as contact_router
 from app.api.v1.public.reviews import router as reviews_router
 from app.api.v1.admin.settings import router as admin_settings_router
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
+from app.core.config import settings
+
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown events"""
@@ -46,6 +52,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Mount static files for uploaded images
+_upload_dir = Path(settings.UPLOAD_DIR).resolve()
+_upload_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(_upload_dir)), name="uploads")
 
 # Include routers
 app.include_router(chat_router, prefix="/api/v1", tags=["Chat"])

@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     CLOUDINARY_CLOUD_NAME: str = ""
     CLOUDINARY_API_KEY: str = ""
     CLOUDINARY_API_SECRET: str = ""
+    # Upload storage
+    UPLOAD_DIR: str = "./uploads"
+    PUBLIC_BASE_URL: str = ""  # e.g. https://reservation-api-kuzr.onrender.com
+
+
 @lru_cache
 def get_settings() -> Settings:
     return Settings()

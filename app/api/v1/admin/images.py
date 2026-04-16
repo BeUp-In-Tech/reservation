@@ -14,8 +14,7 @@ from app.core.database import get_db
 from app.models import AdminUser, Business, Service
 from app.models.other_models import ServiceImage
 from app.api.v1.admin.auth import get_current_admin
-from app.services.cloudinary_service import upload_image, delete_image
-
+from app.services.disk_storage_service import upload_image, delete_image
 router = APIRouter()
 
 
