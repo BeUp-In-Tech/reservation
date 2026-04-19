@@ -44,6 +44,7 @@ class SlotsResponse(BaseModel):
 class BookingPublicResponse(BaseModel):
     tracking_id: str
     status: str
+    payment_status: str | None = None
     service_name: str
     slot_start: str | None
     slot_end: str | None
@@ -423,6 +424,7 @@ async def get_booking_by_tracking_id(
     return BookingPublicResponse(
         tracking_id=booking.public_tracking_id,
         status=booking.status,
+        payment_status=booking.payment_status,
         service_name=service.service_name if service else "Unknown",
         slot_start=booking.slot_start.isoformat() if booking.slot_start else None,
         slot_end=booking.slot_end.isoformat() if booking.slot_end else None,
@@ -474,6 +476,7 @@ async def get_my_bookings(
             BookingPublicResponse(
                 tracking_id=b.public_tracking_id,
                 status=b.status,
+                payment_status=b.payment_status,
                 service_name=services_dict.get(b.service_id, "Unknown"),
                 slot_start=b.slot_start.isoformat() if b.slot_start else None,
                 slot_end=b.slot_end.isoformat() if b.slot_end else None,
